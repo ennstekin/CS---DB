@@ -79,6 +79,7 @@ const categoryLabels = {
 export default function MailsPage() {
   const [mails, setMails] = useState<DbMail[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
   const [selectedMail, setSelectedMail] = useState<DbMail | null>(null);
   const [filter, setFilter] = useState<"all" | "new" | "open" | "resolved">("all");
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
@@ -111,6 +112,52 @@ export default function MailsPage() {
     if (filter === "resolved") return mail.status === "RESOLVED";
     return true;
   });
+
+  const handleQuickSend = async () => {
+    if (!selectedMail) return;
+
+    setIsSending(true);
+
+    try {
+      // Önerilen cevap template'i
+      const suggestedReply = `Sayın Müşterimiz,
+
+Talebiniz için teşekkür ederiz. Siparişinizin durumunu inceledik ve size güncel bilgileri sunmak isteriz.
+
+Siparişiniz ${selectedMail.suggestedOrderIds?.[0] || 'sistemimizde'} kayıtlı olup, kargo sürecindedir. En kısa sürede size ulaştırılacaktır.
+
+Herhangi bir sorunuz olursa lütfen bizimle iletişime geçmekten çekinmeyin.
+
+Saygılarımızla,
+Müşteri Hizmetleri`;
+
+      const response = await fetch("/api/mails/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: selectedMail.fromEmail,
+          subject: `Re: ${selectedMail.subject}`,
+          text: suggestedReply,
+          originalMailId: selectedMail.id,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Mail gönderilemedi");
+      }
+
+      alert("Mail başarıyla gönderildi!");
+
+      // Mailleri yeniden yükle
+      loadMails();
+    } catch (error) {
+      console.error("Error sending mail:", error);
+      alert("Mail gönderilirken hata oluştu: " + (error as Error).message);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   return (
     <div className="flex-col">
@@ -266,10 +313,15 @@ Müşteri Hizmetleri`}
                             {/* Aksiyon Butonları */}
                             <div className="flex gap-2">
                               <Button
-                                onClick={() => setReplyDialogOpen(true)}
+                                onClick={handleQuickSend}
                                 className="flex-1"
+                                disabled={isSending}
                               >
-                                <Send className="h-4 w-4 mr-2" />
+                                {isSending ? (
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                ) : (
+                                  <Send className="h-4 w-4 mr-2" />
+                                )}
                                 Hızlı Gönder
                               </Button>
                               <Button
