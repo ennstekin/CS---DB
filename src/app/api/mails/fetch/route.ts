@@ -43,13 +43,16 @@ export async function POST() {
       tls: settingsMap.mail_imap_tls === "true",
     };
 
-    // Fetch and save mails
-    const savedCount = await fetchAndSaveMails(config);
+    // Fetch mails (without database save for now)
+    const { ImapMailClient } = await import("@/lib/mail/imap-client");
+    const client = new ImapMailClient(config);
+    const mails = await client.fetchUnreadMails(50);
 
+    // Note: Mails are fetched but not saved to database (using file storage)
     return NextResponse.json({
       success: true,
-      count: savedCount,
-      message: `${savedCount} yeni mail kaydedildi`,
+      count: mails.length,
+      message: `${mails.length} mail çekildi (not saved to DB yet)`,
     });
   } catch (error) {
     console.error("Error fetching mails:", error);

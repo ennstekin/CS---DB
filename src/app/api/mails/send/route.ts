@@ -55,29 +55,18 @@ export async function POST(request: NextRequest) {
     };
 
     // Get inReplyTo from original mail if this is a reply
+    // Note: Database lookup disabled for now (using file storage)
     let inReplyTo: string | undefined;
-    if (originalMailId) {
-      const originalMail = await prisma.mail.findUnique({
-        where: { id: originalMailId },
-      });
 
-      if (originalMail?.messageId) {
-        inReplyTo = originalMail.messageId;
-      }
-    }
-
-    // Send mail and save to database
-    const messageId = await sendMailAndSave(
-      config,
-      {
-        to,
-        subject,
-        text,
-        html,
-        inReplyTo,
-      },
-      originalMailId
-    );
+    // Send mail (without database save for now)
+    const client = await import("@/lib/mail/smtp-client").then(m => new m.SmtpMailClient(config));
+    const messageId = await client.sendMail({
+      to,
+      subject,
+      text,
+      html,
+      inReplyTo,
+    });
 
     return NextResponse.json({
       success: true,
