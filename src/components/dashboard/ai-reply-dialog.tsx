@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +36,31 @@ export function AiReplyDialog({ open, onOpenChange, mail }: AiReplyDialogProps) 
   const [aiResponse, setAiResponse] = useState<MailResponseResult | null>(null);
   const [editedResponse, setEditedResponse] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+
+  // Dialog açıldığında önerilen cevabı hazırla
+  useEffect(() => {
+    if (open && mail) {
+      const suggestedReply = `Sayın Müşterimiz,
+
+Talebiniz için teşekkür ederiz. Siparişinizin durumunu inceledik ve size güncel bilgileri sunmak isteriz.
+
+Siparişiniz ${mail.suggestedOrderIds?.[0] || 'sistemimizde'} kayıtlı olup, kargo sürecindedir. En kısa sürede size ulaştırılacaktır.
+
+Herhangi bir sorunuz olursa lütfen bizimle iletişime geçmekten çekinmeyin.
+
+Saygılarımızla,
+Müşteri Hizmetleri`;
+
+      setEditedResponse(suggestedReply);
+      setAiResponse({
+        suggestedResponse: suggestedReply,
+        tone: "professional",
+        confidence: 0.9,
+        reasoning: "Önerilen yanıt hazırlandı"
+      });
+      setIsEditing(true);
+    }
+  }, [open, mail]);
 
   // AI yanıt üret
   const handleGenerateReply = async () => {

@@ -326,7 +326,9 @@ Müşteri Hizmetleri`}
                               </Button>
                               <Button
                                 variant="outline"
-                                onClick={() => setReplyDialogOpen(true)}
+                                onClick={() => {
+                                  setReplyDialogOpen(true);
+                                }}
                               >
                                 <Edit className="h-4 w-4 mr-2" />
                                 Düzenle
