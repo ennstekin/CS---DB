@@ -42,3 +42,6 @@ prisma/migrations
 
 # MCP
 .mcp.json
+
+# Data (sensitive settings)
+data/

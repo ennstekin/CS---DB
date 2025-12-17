@@ -1,17 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import fs from "fs";
+import path from "path";
+
+const SETTINGS_FILE = path.join(process.cwd(), "data", "settings.json");
+
+// Ensure data directory exists
+function ensureDataDir() {
+  const dataDir = path.join(process.cwd(), "data");
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+}
+
+// Read settings from file
+function readSettings(): Record<string, string> {
+  ensureDataDir();
+  if (!fs.existsSync(SETTINGS_FILE)) {
+    return {};
+  }
+  try {
+    const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (error) {
+    console.error("Error reading settings file:", error);
+    return {};
+  }
+}
+
+// Write settings to file
+function writeSettings(settings: Record<string, string>) {
+  ensureDataDir();
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+}
 
 export async function GET() {
   try {
-    const settings = await prisma.setting.findMany();
-
-    // Convert array to object for easier access
-    const settingsObj: Record<string, string> = {};
-    settings.forEach(setting => {
-      settingsObj[setting.key] = setting.value;
-    });
-
-    return NextResponse.json(settingsObj);
+    const settings = readSettings();
+    return NextResponse.json(settings);
   } catch (error) {
     console.error("Error fetching settings:", error);
     return NextResponse.json(
@@ -33,14 +58,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Upsert setting
-    const setting = await prisma.setting.upsert({
-      where: { key },
-      update: { value: value || "" },
-      create: { key, value: value || "" },
-    });
+    const settings = readSettings();
+    settings[key] = value || "";
+    writeSettings(settings);
 
-    return NextResponse.json(setting);
+    return NextResponse.json({ key, value: value || "" });
   } catch (error) {
     console.error("Error saving setting:", error);
     return NextResponse.json(
@@ -53,18 +75,13 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const settings = body as Record<string, string>;
+    const newSettings = body as Record<string, string>;
 
-    // Bulk upsert all settings
-    const updates = Object.entries(settings).map(([key, value]) =>
-      prisma.setting.upsert({
-        where: { key },
-        update: { value: value || "" },
-        create: { key, value: value || "" },
-      })
-    );
-
-    await prisma.$transaction(updates);
+    const settings = readSettings();
+    Object.entries(newSettings).forEach(([key, value]) => {
+      settings[key] = value || "";
+    });
+    writeSettings(settings);
 
     return NextResponse.json({ success: true });
   } catch (error) {

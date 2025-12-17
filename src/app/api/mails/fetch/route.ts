@@ -1,28 +1,26 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { fetchAndSaveMails, ImapConfig } from "@/lib/mail/imap-client";
+import fs from "fs";
+import path from "path";
+
+const SETTINGS_FILE = path.join(process.cwd(), "data", "settings.json");
+
+function readSettings(): Record<string, string> {
+  if (!fs.existsSync(SETTINGS_FILE)) {
+    return {};
+  }
+  try {
+    const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (error) {
+    return {};
+  }
+}
 
 export async function POST() {
   try {
-    // Get IMAP settings from database
-    const settings = await prisma.setting.findMany({
-      where: {
-        key: {
-          in: [
-            "mail_imap_host",
-            "mail_imap_port",
-            "mail_imap_user",
-            "mail_imap_password",
-            "mail_imap_tls",
-          ],
-        },
-      },
-    });
-
-    const settingsMap: Record<string, string> = {};
-    settings.forEach((s) => {
-      settingsMap[s.key] = s.value;
-    });
+    // Get IMAP settings from file
+    const settingsMap = readSettings();
 
     // Validate required settings
     if (

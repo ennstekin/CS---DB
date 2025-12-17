@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { sendMailAndSave, SmtpConfig } from "@/lib/mail/smtp-client";
+import fs from "fs";
+import path from "path";
+
+const SETTINGS_FILE = path.join(process.cwd(), "data", "settings.json");
+
+function readSettings(): Record<string, string> {
+  if (!fs.existsSync(SETTINGS_FILE)) {
+    return {};
+  }
+  try {
+    const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (error) {
+    return {};
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,25 +30,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get SMTP settings from database
-    const settings = await prisma.setting.findMany({
-      where: {
-        key: {
-          in: [
-            "mail_smtp_host",
-            "mail_smtp_port",
-            "mail_smtp_user",
-            "mail_smtp_password",
-            "mail_smtp_secure",
-          ],
-        },
-      },
-    });
-
-    const settingsMap: Record<string, string> = {};
-    settings.forEach((s) => {
-      settingsMap[s.key] = s.value;
-    });
+    // Get SMTP settings from file
+    const settingsMap = readSettings();
 
     // Validate required settings
     if (
