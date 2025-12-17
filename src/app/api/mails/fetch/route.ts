@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ImapConfig } from "@/lib/mail/imap-client";
+import { ImapMailClient } from "@/lib/mail/imap-client";
 import { supabase } from "@/lib/supabase";
 
 export async function POST() {
@@ -38,23 +39,20 @@ export async function POST() {
       tls: settingsMap.mail_imap_tls === "true",
     };
 
-    // Fetch mails and save to Supabase
-    const { ImapMailClient } = await import("@/lib/mail/imap-client");
+    // Fetch mails via IMAP
     const client = new ImapMailClient(config);
     const mails = await client.fetchUnreadMails(50);
 
     // Save to Supabase
-    const { supabase } = await import("@/lib/supabase");
-
     for (const mail of mails) {
       await supabase.from("mails").upsert({
         message_id: mail.messageId,
         from_email: mail.from,
-        to_email: mail.to,
+        to_email: config.user,
         subject: mail.subject,
-        body_text: mail.text,
-        body_html: mail.html,
-        received_at: mail.date,
+        body_text: mail.bodyText,
+        body_html: mail.bodyHtml,
+        received_at: mail.receivedAt,
       }, { onConflict: "message_id" });
     }
 
