@@ -1,21 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendMailAndSave, SmtpConfig } from "@/lib/mail/smtp-client";
-import fs from "fs";
-import path from "path";
+import { kv } from "@vercel/kv";
 
-const SETTINGS_FILE = path.join(process.cwd(), "data", "settings.json");
-
-function readSettings(): Record<string, string> {
-  if (!fs.existsSync(SETTINGS_FILE)) {
-    return {};
-  }
-  try {
-    const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch (error) {
-    return {};
-  }
-}
+const SETTINGS_KEY = "app_settings";
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,8 +17,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get SMTP settings from file
-    const settingsMap = readSettings();
+    // Get SMTP settings from KV
+    const settingsMap = await kv.get<Record<string, string>>(SETTINGS_KEY) || {};
 
     // Validate required settings
     if (

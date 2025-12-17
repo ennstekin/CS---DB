@@ -1,26 +1,13 @@
 import { NextResponse } from "next/server";
-import { fetchAndSaveMails, ImapConfig } from "@/lib/mail/imap-client";
-import fs from "fs";
-import path from "path";
+import { ImapConfig } from "@/lib/mail/imap-client";
+import { kv } from "@vercel/kv";
 
-const SETTINGS_FILE = path.join(process.cwd(), "data", "settings.json");
-
-function readSettings(): Record<string, string> {
-  if (!fs.existsSync(SETTINGS_FILE)) {
-    return {};
-  }
-  try {
-    const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch (error) {
-    return {};
-  }
-}
+const SETTINGS_KEY = "app_settings";
 
 export async function POST() {
   try {
-    // Get IMAP settings from file
-    const settingsMap = readSettings();
+    // Get IMAP settings from KV
+    const settingsMap = await kv.get<Record<string, string>>(SETTINGS_KEY) || {};
 
     // Validate required settings
     if (

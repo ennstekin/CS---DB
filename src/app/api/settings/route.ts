@@ -1,42 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { kv } from "@vercel/kv";
 
-const SETTINGS_FILE = path.join(process.cwd(), "data", "settings.json");
-
-// Ensure data directory exists
-function ensureDataDir() {
-  const dataDir = path.join(process.cwd(), "data");
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-}
-
-// Read settings from file
-function readSettings(): Record<string, string> {
-  ensureDataDir();
-  if (!fs.existsSync(SETTINGS_FILE)) {
-    return {};
-  }
-  try {
-    const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch (error) {
-    console.error("Error reading settings file:", error);
-    return {};
-  }
-}
-
-// Write settings to file
-function writeSettings(settings: Record<string, string>) {
-  ensureDataDir();
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
-}
+const SETTINGS_KEY = "app_settings";
 
 export async function GET() {
   try {
-    const settings = readSettings();
-    return NextResponse.json(settings);
+    const settings = await kv.get<Record<string, string>>(SETTINGS_KEY);
+    return NextResponse.json(settings || {});
   } catch (error) {
     console.error("Error fetching settings:", error);
     return NextResponse.json(
@@ -58,9 +28,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const settings = readSettings();
+    const settings = await kv.get<Record<string, string>>(SETTINGS_KEY) || {};
     settings[key] = value || "";
-    writeSettings(settings);
+    await kv.set(SETTINGS_KEY, settings);
 
     return NextResponse.json({ key, value: value || "" });
   } catch (error) {
@@ -77,11 +47,11 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const newSettings = body as Record<string, string>;
 
-    const settings = readSettings();
+    const settings = await kv.get<Record<string, string>>(SETTINGS_KEY) || {};
     Object.entries(newSettings).forEach(([key, value]) => {
       settings[key] = value || "";
     });
-    writeSettings(settings);
+    await kv.set(SETTINGS_KEY, settings);
 
     return NextResponse.json({ success: true });
   } catch (error) {
