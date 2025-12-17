@@ -261,7 +261,8 @@ model Mail {
   references      String[]
   attachments     Json?      // Attachment metadata array
 
-  receivedAt      DateTime
+  receivedAt      DateTime?
+  sentAt          DateTime?
   respondedAt     DateTime?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
@@ -430,4 +431,18 @@ model DailyMetric {
 
   @@map("daily_metrics")
   @@index([date])
+}
+
+// ==================== SETTINGS ====================
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+  @@index([key])
 }

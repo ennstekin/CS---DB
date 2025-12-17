@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { mockMails, type MockMail } from "@/lib/mock-data";
 import { AiReplyDialog } from "@/components/dashboard/ai-reply-dialog";
 import { OrderDetailDialog } from "@/components/dashboard/order-detail-dialog";
 import {
@@ -16,11 +15,32 @@ import {
   Sparkles,
   ChevronRight,
   Send,
-  Edit
+  Edit,
+  Loader2,
+  RefreshCw
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { tr } from "date-fns/locale";
+
+interface DbMail {
+  id: string;
+  fromEmail: string;
+  toEmail: string;
+  subject: string;
+  bodyText: string;
+  bodyHtml?: string;
+  status: string;
+  priority: string;
+  isAiAnalyzed: boolean;
+  aiCategory?: string;
+  aiSummary?: string;
+  suggestedOrderIds: string[];
+  matchConfidence?: number;
+  receivedAt?: Date;
+  sentAt?: Date;
+  createdAt: Date;
+}
 
 const statusColors = {
   NEW: "bg-blue-500",
@@ -57,13 +77,34 @@ const categoryLabels = {
 };
 
 export default function MailsPage() {
-  const [selectedMail, setSelectedMail] = useState<MockMail | null>(null);
+  const [mails, setMails] = useState<DbMail[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedMail, setSelectedMail] = useState<DbMail | null>(null);
   const [filter, setFilter] = useState<"all" | "new" | "open" | "resolved">("all");
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [orderDetailOpen, setOrderDetailOpen] = useState(false);
   const [selectedOrderNumber, setSelectedOrderNumber] = useState<string>("");
 
-  const filteredMails = mockMails.filter((mail) => {
+  useEffect(() => {
+    loadMails();
+  }, [filter]);
+
+  const loadMails = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/mails?status=${filter}&limit=100`);
+      if (response.ok) {
+        const data = await response.json();
+        setMails(data);
+      }
+    } catch (error) {
+      console.error("Error loading mails:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const filteredMails = mails.filter((mail) => {
     if (filter === "all") return true;
     if (filter === "new") return mail.status === "NEW";
     if (filter === "open") return mail.status === "OPEN" || mail.status === "PENDING";
@@ -81,25 +122,37 @@ export default function MailsPage() {
               <Sparkles className="h-3 w-3" />
               AI Analiz Aktif
             </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadMails}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+            </Button>
           </div>
         </div>
 
         <Tabs defaultValue="all" className="space-y-4" onValueChange={(v) => setFilter(v as any)}>
           <TabsList>
             <TabsTrigger value="all">
-              Tümü ({mockMails.length})
+              Tümü ({mails.length})
             </TabsTrigger>
             <TabsTrigger value="new">
               <Mail className="h-4 w-4 mr-1" />
-              Yeni ({mockMails.filter(m => m.status === "NEW").length})
+              Yeni ({mails.filter(m => m.status === "NEW").length})
             </TabsTrigger>
             <TabsTrigger value="open">
               <Clock className="h-4 w-4 mr-1" />
-              Bekleyen ({mockMails.filter(m => m.status === "OPEN" || m.status === "PENDING").length})
+              Bekleyen ({mails.filter(m => m.status === "OPEN" || m.status === "PENDING").length})
             </TabsTrigger>
             <TabsTrigger value="resolved">
               <CheckCircle className="h-4 w-4 mr-1" />
-              Çözülen ({mockMails.filter(m => m.status === "RESOLVED").length})
+              Çözülen ({mails.filter(m => m.status === "RESOLVED").length})
             </TabsTrigger>
           </TabsList>
 
@@ -126,24 +179,24 @@ export default function MailsPage() {
                       >
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <span className="font-medium text-sm truncate">
-                            {mail.from}
+                            {mail.fromEmail}
                           </span>
                           <Badge
-                            className={cn("text-xs", statusColors[mail.status])}
+                            className={cn("text-xs", statusColors[mail.status as keyof typeof statusColors])}
                             variant="default"
                           >
-                            {statusLabels[mail.status]}
+                            {statusLabels[mail.status as keyof typeof statusLabels]}
                           </Badge>
                         </div>
                         <h4 className="font-semibold text-sm mb-1 truncate">
                           {mail.subject}
                         </h4>
                         <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
-                          {mail.preview}
+                          {mail.bodyText.substring(0, 100)}...
                         </p>
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-muted-foreground">
-                            {format(new Date(mail.receivedAt), "dd MMM HH:mm", { locale: tr })}
+                            {mail.receivedAt ? format(new Date(mail.receivedAt), "dd MMM HH:mm", { locale: tr }) : format(new Date(mail.createdAt), "dd MMM HH:mm", { locale: tr })}
                           </span>
                           {mail.priority === "HIGH" && (
                             <AlertCircle className={cn("h-3 w-3", priorityColors.HIGH)} />
@@ -168,13 +221,13 @@ export default function MailsPage() {
                         <h3 className="text-xl font-semibold">{selectedMail.subject}</h3>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <span>Gönderen:</span>
-                          <span className="font-medium text-foreground">{selectedMail.from}</span>
+                          <span className="font-medium text-foreground">{selectedMail.fromEmail}</span>
                           <span>•</span>
-                          <span>{format(new Date(selectedMail.receivedAt), "dd MMMM yyyy, HH:mm", { locale: tr })}</span>
+                          <span>{selectedMail.receivedAt ? format(new Date(selectedMail.receivedAt), "dd MMMM yyyy, HH:mm", { locale: tr }) : format(new Date(selectedMail.createdAt), "dd MMMM yyyy, HH:mm", { locale: tr })}</span>
                         </div>
                         <div className="flex gap-2">
-                          <Badge className={statusColors[selectedMail.status]}>
-                            {statusLabels[selectedMail.status]}
+                          <Badge className={statusColors[selectedMail.status as keyof typeof statusColors]}>
+                            {statusLabels[selectedMail.status as keyof typeof statusLabels]}
                           </Badge>
                           {selectedMail.aiCategory && (
                             <Badge variant="outline">
@@ -201,7 +254,7 @@ export default function MailsPage() {
 
 Talebiniz için teşekkür ederiz. Siparişinizin durumunu inceledik ve size güncel bilgileri sunmak isteriz.
 
-Siparişiniz ${selectedMail.suggestedOrderNumbers?.[0] || 'sistemimizde'} kayıtlı olup, kargo sürecindedir. En kısa sürede size ulaştırılacaktır.
+Siparişiniz ${selectedMail.suggestedOrderIds?.[0] || 'sistemimizde'} kayıtlı olup, kargo sürecindedir. En kısa sürede size ulaştırılacaktır.
 
 Herhangi bir sorunuz olursa lütfen bizimle iletişime geçmekten çekinmeyin.
 
@@ -229,13 +282,13 @@ Müşteri Hizmetleri`}
                             </div>
 
                             {/* Sipariş Eşleştirmeleri */}
-                            {selectedMail.suggestedOrderNumbers.length > 0 && (
+                            {selectedMail.suggestedOrderIds && selectedMail.suggestedOrderIds.length > 0 && (
                               <div className="pt-2 border-t border-blue-200">
                                 <p className="text-xs font-medium text-gray-600 mb-2">
                                   İlgili Siparişler:
                                 </p>
                                 <div className="flex gap-2 flex-wrap">
-                                  {selectedMail.suggestedOrderNumbers.map((orderNo) => (
+                                  {selectedMail.suggestedOrderIds.map((orderNo) => (
                                     <Badge
                                       key={orderNo}
                                       variant="secondary"
@@ -259,7 +312,7 @@ Müşteri Hizmetleri`}
                       {/* Mail İçeriği */}
                       <div className="border rounded-lg p-4 bg-gray-50">
                         <pre className="whitespace-pre-wrap font-sans text-sm">
-                          {selectedMail.body}
+                          {selectedMail.bodyText}
                         </pre>
                       </div>
 

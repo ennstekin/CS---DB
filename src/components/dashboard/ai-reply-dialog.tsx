@@ -13,13 +13,21 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, Loader2, Send, Edit } from "lucide-react";
-import type { MockMail } from "@/lib/mock-data";
 import type { MailResponseResult } from "@/lib/ai/mail-responder";
+
+interface Mail {
+  id: string;
+  fromEmail: string;
+  subject: string;
+  bodyText: string;
+  aiCategory?: string;
+  suggestedOrderIds?: string[];
+}
 
 interface AiReplyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  mail: MockMail | null;
+  mail: Mail | null;
 }
 
 export function AiReplyDialog({ open, onOpenChange, mail }: AiReplyDialogProps) {
@@ -41,11 +49,11 @@ export function AiReplyDialog({ open, onOpenChange, mail }: AiReplyDialogProps) 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: mail.from,
+          from: mail.fromEmail,
           subject: mail.subject,
-          body: mail.body,
+          body: mail.bodyText,
           category: mail.aiCategory,
-          suggestedOrderNumbers: mail.suggestedOrderNumbers,
+          suggestedOrderNumbers: mail.suggestedOrderIds || [],
         }),
       });
 
@@ -69,10 +77,24 @@ export function AiReplyDialog({ open, onOpenChange, mail }: AiReplyDialogProps) 
     setIsSending(true);
 
     try {
-      // TODO: Gerçek mail gönderme API'si
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const response = await fetch("/api/mails/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: mail.fromEmail,
+          subject: `Re: ${mail.subject}`,
+          text: editedResponse,
+          originalMailId: mail.id,
+        }),
+      });
 
-      alert(`Mail gönderildi!\n\nAlıcı: ${mail.from}\nKonu: Re: ${mail.subject}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to send mail");
+      }
+
+      const data = await response.json();
+      alert(`Mail başarıyla gönderildi!\n\nAlıcı: ${mail.fromEmail}\nKonu: Re: ${mail.subject}`);
 
       // Dialog'u kapat ve state'i temizle
       onOpenChange(false);
@@ -83,7 +105,7 @@ export function AiReplyDialog({ open, onOpenChange, mail }: AiReplyDialogProps) 
       }, 300);
     } catch (error) {
       console.error("Error sending mail:", error);
-      alert("Mail gönderilirken bir hata oluştu.");
+      alert("Mail gönderilirken bir hata oluştu: " + (error as Error).message);
     } finally {
       setIsSending(false);
     }
@@ -110,7 +132,7 @@ export function AiReplyDialog({ open, onOpenChange, mail }: AiReplyDialogProps) 
             AI Destekli Yanıt Oluştur
           </DialogTitle>
           <DialogDescription>
-            {mail && `${mail.from} adresine yanıt hazırlanıyor`}
+            {mail && `${mail.fromEmail} adresine yanıt hazırlanıyor`}
           </DialogDescription>
         </DialogHeader>
 
@@ -122,7 +144,7 @@ export function AiReplyDialog({ open, onOpenChange, mail }: AiReplyDialogProps) 
               <p className="text-sm text-gray-600 mb-1">
                 <strong>Konu:</strong> {mail.subject}
               </p>
-              <p className="text-xs text-gray-500 line-clamp-3">{mail.body}</p>
+              <p className="text-xs text-gray-500 line-clamp-3">{mail.bodyText}</p>
             </div>
           )}
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -15,33 +15,172 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  Download,
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SettingsPage() {
+  const { toast } = useToast();
   const [showIkasToken, setShowIkasToken] = useState(false);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showMailPassword, setShowMailPassword] = useState(false);
+  const [isFetchingMails, setIsFetchingMails] = useState(false);
 
-  // Mock bağlantı durumları
-  const [connections, setConnections] = useState({
-    ikas: { connected: false, testing: false },
-    openai: { connected: false, testing: false },
-    mail: { connected: false, testing: false },
+  // Form states
+  const [ikasSettings, setIkasSettings] = useState({
+    ikas_api_url: "",
+    ikas_access_token: "",
   });
 
-  const testConnection = async (service: keyof typeof connections) => {
+  const [openaiSettings, setOpenaiSettings] = useState({
+    openai_api_key: "",
+    openai_model: "gpt-4",
+  });
+
+  const [mailSettings, setMailSettings] = useState({
+    mail_imap_host: "",
+    mail_imap_port: "993",
+    mail_imap_user: "",
+    mail_imap_password: "",
+    mail_imap_tls: "true",
+    mail_smtp_host: "",
+    mail_smtp_port: "587",
+    mail_smtp_user: "",
+    mail_smtp_password: "",
+    mail_smtp_secure: "false",
+  });
+
+  const [connections, setConnections] = useState({
+    ikas: { connected: false, testing: false, saving: false },
+    openai: { connected: false, testing: false, saving: false },
+    mail: { connected: false, testing: false, saving: false },
+  });
+
+  // Load settings on mount
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const response = await fetch("/api/settings");
+      if (response.ok) {
+        const data = await response.json();
+
+        setIkasSettings({
+          ikas_api_url: data.ikas_api_url || "",
+          ikas_access_token: data.ikas_access_token || "",
+        });
+
+        setOpenaiSettings({
+          openai_api_key: data.openai_api_key || "",
+          openai_model: data.openai_model || "gpt-4",
+        });
+
+        setMailSettings({
+          mail_imap_host: data.mail_imap_host || "",
+          mail_imap_port: data.mail_imap_port || "993",
+          mail_imap_user: data.mail_imap_user || "",
+          mail_imap_password: data.mail_imap_password || "",
+          mail_imap_tls: data.mail_imap_tls || "true",
+          mail_smtp_host: data.mail_smtp_host || "",
+          mail_smtp_port: data.mail_smtp_port || "587",
+          mail_smtp_user: data.mail_smtp_user || "",
+          mail_smtp_password: data.mail_smtp_password || "",
+          mail_smtp_secure: data.mail_smtp_secure || "false",
+        });
+
+        // Check which connections are configured
+        setConnections({
+          ikas: {
+            connected: !!(data.ikas_api_url && data.ikas_access_token),
+            testing: false,
+            saving: false
+          },
+          openai: {
+            connected: !!data.openai_api_key,
+            testing: false,
+            saving: false
+          },
+          mail: {
+            connected: !!(data.mail_imap_host && data.mail_imap_user && data.mail_imap_password),
+            testing: false,
+            saving: false
+          },
+        });
+      }
+    } catch (error) {
+      console.error("Error loading settings:", error);
+    }
+  };
+
+  const saveSettings = async (service: "ikas" | "openai" | "mail", settings: Record<string, string>) => {
     setConnections(prev => ({
       ...prev,
-      [service]: { ...prev[service], testing: true }
+      [service]: { ...prev[service], saving: true }
     }));
 
-    // Mock API test
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
 
-    setConnections(prev => ({
-      ...prev,
-      [service]: { connected: true, testing: false }
-    }));
+      if (response.ok) {
+        toast({
+          title: "Başarılı",
+          description: "Ayarlar kaydedildi",
+        });
+
+        setConnections(prev => ({
+          ...prev,
+          [service]: { ...prev[service], connected: true, saving: false }
+        }));
+      } else {
+        throw new Error("Kaydetme başarısız");
+      }
+    } catch (error) {
+      toast({
+        title: "Hata",
+        description: "Ayarlar kaydedilemedi",
+        variant: "destructive",
+      });
+
+      setConnections(prev => ({
+        ...prev,
+        [service]: { ...prev[service], saving: false }
+      }));
+    }
+  };
+
+  const fetchMails = async () => {
+    setIsFetchingMails(true);
+
+    try {
+      const response = await fetch("/api/mails/fetch", {
+        method: "POST",
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Başarılı",
+          description: data.message || `${data.count} mail çekildi`,
+        });
+      } else {
+        throw new Error(data.error || "Mail çekme başarısız");
+      }
+    } catch (error) {
+      toast({
+        title: "Hata",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsFetchingMails(false);
+    }
   };
 
   return (
@@ -80,10 +219,10 @@ export default function SettingsPage() {
                       Ikas E-ticaret
                     </CardTitle>
                     <CardDescription>
-                      Sipariş ve müşteri verilerini senkronize edin
+                      Sipariş ve müşteri verilerinizi Ikas'tan çekin
                     </CardDescription>
                   </div>
-                  <Badge variant={connections.ikas.connected ? "default" : "secondary"} className={connections.ikas.connected ? "bg-green-500" : ""}>
+                  <Badge variant={connections.ikas.connected ? "default" : "secondary"}>
                     {connections.ikas.connected ? (
                       <><CheckCircle className="h-3 w-3 mr-1" /> Bağlı</>
                     ) : (
@@ -94,21 +233,22 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="ikas-url">API URL</Label>
+                  <Label>API URL</Label>
                   <Input
-                    id="ikas-url"
+                    type="text"
                     placeholder="https://api.myikas.com/api/v1/admin/graphql"
-                    defaultValue="https://api.myikas.com/api/v1/admin/graphql"
-                    disabled
+                    value={ikasSettings.ikas_api_url}
+                    onChange={(e) => setIkasSettings({ ...ikasSettings, ikas_api_url: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="ikas-token">Access Token</Label>
+                  <Label>Access Token</Label>
                   <div className="flex gap-2">
                     <Input
-                      id="ikas-token"
                       type={showIkasToken ? "text" : "password"}
-                      placeholder="ikas-access-token-here"
+                      placeholder="••••••••••••••••"
+                      value={ikasSettings.ikas_access_token}
+                      onChange={(e) => setIkasSettings({ ...ikasSettings, ikas_access_token: e.target.value })}
                     />
                     <Button
                       variant="outline"
@@ -118,22 +258,15 @@ export default function SettingsPage() {
                       {showIkasToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Ikas Developer Portal'dan access token alabilirsiniz.
-                  </p>
                 </div>
                 <div className="flex gap-2">
                   <Button
-                    onClick={() => testConnection('ikas')}
-                    disabled={connections.ikas.testing}
+                    onClick={() => saveSettings("ikas", ikasSettings)}
+                    disabled={connections.ikas.saving}
                   >
-                    {connections.ikas.testing ? (
-                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Test Ediliyor...</>
-                    ) : (
-                      'Bağlantıyı Test Et'
-                    )}
+                    {connections.ikas.saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Kaydet
                   </Button>
-                  <Button variant="outline">Kaydet</Button>
                 </div>
               </CardContent>
             </Card>
@@ -143,15 +276,12 @@ export default function SettingsPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <div className="h-5 w-5 bg-black rounded flex items-center justify-center text-white text-xs font-bold">AI</div>
-                      OpenAI API
-                    </CardTitle>
+                    <CardTitle>OpenAI</CardTitle>
                     <CardDescription>
-                      Mail analizi ve otomatik yanıt oluşturma
+                      AI özellikleri için OpenAI API anahtarı
                     </CardDescription>
                   </div>
-                  <Badge variant={connections.openai.connected ? "default" : "secondary"} className={connections.openai.connected ? "bg-green-500" : ""}>
+                  <Badge variant={connections.openai.connected ? "default" : "secondary"}>
                     {connections.openai.connected ? (
                       <><CheckCircle className="h-3 w-3 mr-1" /> Bağlı</>
                     ) : (
@@ -162,12 +292,13 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="openai-key">API Key</Label>
+                  <Label>API Key</Label>
                   <div className="flex gap-2">
                     <Input
-                      id="openai-key"
                       type={showOpenAIKey ? "text" : "password"}
-                      placeholder="sk-..."
+                      placeholder="sk-••••••••••••••••"
+                      value={openaiSettings.openai_api_key}
+                      onChange={(e) => setOpenaiSettings({ ...openaiSettings, openai_api_key: e.target.value })}
                     />
                     <Button
                       variant="outline"
@@ -177,47 +308,37 @@ export default function SettingsPage() {
                       {showOpenAIKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    OpenAI Platform'dan API key alabilirsiniz.
-                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="openai-model">Model</Label>
+                  <Label>Model</Label>
                   <Input
-                    id="openai-model"
+                    type="text"
                     placeholder="gpt-4"
-                    defaultValue="gpt-4"
+                    value={openaiSettings.openai_model}
+                    onChange={(e) => setOpenaiSettings({ ...openaiSettings, openai_model: e.target.value })}
                   />
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => testConnection('openai')}
-                    disabled={connections.openai.testing}
-                  >
-                    {connections.openai.testing ? (
-                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Test Ediliyor...</>
-                    ) : (
-                      'Bağlantıyı Test Et'
-                    )}
-                  </Button>
-                  <Button variant="outline">Kaydet</Button>
-                </div>
+                <Button
+                  onClick={() => saveSettings("openai", openaiSettings)}
+                  disabled={connections.openai.saving}
+                >
+                  {connections.openai.saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Kaydet
+                </Button>
               </CardContent>
             </Card>
 
-            {/* Mail Integration */}
+            {/* Mail Server Integration */}
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="flex items-center gap-2">
-                      📧 Mail Sunucusu
-                    </CardTitle>
+                    <CardTitle>Mail Server</CardTitle>
                     <CardDescription>
-                      IMAP/SMTP mail sunucu ayarları
+                      IMAP ve SMTP ayarları
                     </CardDescription>
                   </div>
-                  <Badge variant={connections.mail.connected ? "default" : "secondary"} className={connections.mail.connected ? "bg-green-500" : ""}>
+                  <Badge variant={connections.mail.connected ? "default" : "secondary"}>
                     {connections.mail.connected ? (
                       <><CheckCircle className="h-3 w-3 mr-1" /> Bağlı</>
                     ) : (
@@ -226,77 +347,139 @@ export default function SettingsPage() {
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="imap-host">IMAP Host</Label>
-                    <Input id="imap-host" placeholder="imap.gmail.com" />
+              <CardContent className="space-y-6">
+                {/* IMAP Settings */}
+                <div className="space-y-4">
+                  <h4 className="font-semibold">IMAP (Mail Alma)</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Host</Label>
+                      <Input
+                        type="text"
+                        placeholder="imap.gmail.com"
+                        value={mailSettings.mail_imap_host}
+                        onChange={(e) => setMailSettings({ ...mailSettings, mail_imap_host: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Port</Label>
+                      <Input
+                        type="text"
+                        placeholder="993"
+                        value={mailSettings.mail_imap_port}
+                        onChange={(e) => setMailSettings({ ...mailSettings, mail_imap_port: e.target.value })}
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="imap-port">IMAP Port</Label>
-                    <Input id="imap-port" placeholder="993" defaultValue="993" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="smtp-host">SMTP Host</Label>
-                    <Input id="smtp-host" placeholder="smtp.gmail.com" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="smtp-port">SMTP Port</Label>
-                    <Input id="smtp-port" placeholder="587" defaultValue="587" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="mail-email">E-posta Adresi</Label>
-                  <Input id="mail-email" type="email" placeholder="support@example.com" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="mail-password">Şifre</Label>
-                  <div className="flex gap-2">
+                    <Label>Email</Label>
                     <Input
-                      id="mail-password"
-                      type={showMailPassword ? "text" : "password"}
-                      placeholder="••••••••"
+                      type="email"
+                      placeholder="your-email@gmail.com"
+                      value={mailSettings.mail_imap_user}
+                      onChange={(e) => setMailSettings({ ...mailSettings, mail_imap_user: e.target.value })}
                     />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setShowMailPassword(!showMailPassword)}
-                    >
-                      {showMailPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Şifre</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type={showMailPassword ? "text" : "password"}
+                        placeholder="••••••••••••••••"
+                        value={mailSettings.mail_imap_password}
+                        onChange={(e) => setMailSettings({ ...mailSettings, mail_imap_password: e.target.value })}
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setShowMailPassword(!showMailPassword)}
+                      >
+                        {showMailPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </div>
                 </div>
+
+                {/* SMTP Settings */}
+                <div className="space-y-4 pt-4 border-t">
+                  <h4 className="font-semibold">SMTP (Mail Gönderme)</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Host</Label>
+                      <Input
+                        type="text"
+                        placeholder="smtp.gmail.com"
+                        value={mailSettings.mail_smtp_host}
+                        onChange={(e) => setMailSettings({ ...mailSettings, mail_smtp_host: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Port</Label>
+                      <Input
+                        type="text"
+                        placeholder="587"
+                        value={mailSettings.mail_smtp_port}
+                        onChange={(e) => setMailSettings({ ...mailSettings, mail_smtp_port: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      placeholder="your-email@gmail.com"
+                      value={mailSettings.mail_smtp_user}
+                      onChange={(e) => setMailSettings({ ...mailSettings, mail_smtp_user: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Şifre</Label>
+                    <Input
+                      type={showMailPassword ? "text" : "password"}
+                      placeholder="••••••••••••••••"
+                      value={mailSettings.mail_smtp_password}
+                      onChange={(e) => setMailSettings({ ...mailSettings, mail_smtp_password: e.target.value })}
+                    />
+                  </div>
+                </div>
+
                 <div className="flex gap-2">
                   <Button
-                    onClick={() => testConnection('mail')}
-                    disabled={connections.mail.testing}
+                    onClick={() => saveSettings("mail", mailSettings)}
+                    disabled={connections.mail.saving}
                   >
-                    {connections.mail.testing ? (
-                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Test Ediliyor...</>
-                    ) : (
-                      'Bağlantıyı Test Et'
-                    )}
+                    {connections.mail.saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Kaydet
                   </Button>
-                  <Button variant="outline">Kaydet</Button>
+                  <Button
+                    variant="secondary"
+                    onClick={fetchMails}
+                    disabled={isFetchingMails || !connections.mail.connected}
+                  >
+                    {isFetchingMails ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
+                    Mail Çek
+                  </Button>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Genel Ayarlar Tab */}
-          <TabsContent value="general" className="space-y-4">
+          {/* Genel Tab */}
+          <TabsContent value="general">
             <Card>
               <CardHeader>
                 <CardTitle>Genel Ayarlar</CardTitle>
                 <CardDescription>
-                  Uygulama genel ayarları (Yakında)
+                  Uygulama genel ayarları
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  Bu bölüm yakında eklenecek...
+                  Yakında eklenecek...
                 </p>
               </CardContent>
             </Card>
