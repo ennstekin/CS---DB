@@ -38,16 +38,30 @@ export async function POST() {
       tls: settingsMap.mail_imap_tls === "true",
     };
 
-    // Fetch mails (without database save for now)
+    // Fetch mails and save to Supabase
     const { ImapMailClient } = await import("@/lib/mail/imap-client");
     const client = new ImapMailClient(config);
     const mails = await client.fetchUnreadMails(50);
 
-    // Note: Mails are fetched but not saved to database (using file storage)
+    // Save to Supabase
+    const { supabase } = await import("@/lib/supabase");
+
+    for (const mail of mails) {
+      await supabase.from("mails").upsert({
+        message_id: mail.messageId,
+        from_email: mail.from,
+        to_email: mail.to,
+        subject: mail.subject,
+        body_text: mail.text,
+        body_html: mail.html,
+        received_at: mail.date,
+      }, { onConflict: "message_id" });
+    }
+
     return NextResponse.json({
       success: true,
       count: mails.length,
-      message: `${mails.length} mail çekildi (not saved to DB yet)`,
+      message: `${mails.length} mail çekildi ve kaydedildi`,
     });
   } catch (error) {
     console.error("Error fetching mails:", error);
