@@ -145,9 +145,9 @@ export default function MailsPage() {
                           <span className="text-muted-foreground">
                             {format(new Date(mail.receivedAt), "dd MMM HH:mm", { locale: tr })}
                           </span>
-                          {mail.priority === "HIGH" || mail.priority === "URGENT" ? (
-                            <AlertCircle className={cn("h-3 w-3", priorityColors[mail.priority])} />
-                          ) : null}
+                          {mail.priority === "HIGH" && (
+                            <AlertCircle className={cn("h-3 w-3", priorityColors.HIGH)} />
+                          )}
                         </div>
                       </div>
                     ))}
