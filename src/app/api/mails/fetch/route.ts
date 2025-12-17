@@ -1,13 +1,21 @@
 import { NextResponse } from "next/server";
 import { ImapConfig } from "@/lib/mail/imap-client";
-import { kv } from "@vercel/kv";
-
-const SETTINGS_KEY = "app_settings";
+import { supabase } from "@/lib/supabase";
 
 export async function POST() {
   try {
-    // Get IMAP settings from KV
-    const settingsMap = await kv.get<Record<string, string>>(SETTINGS_KEY) || {};
+    // Get IMAP settings from Supabase
+    const { data, error } = await supabase
+      .from("settings")
+      .select("key, value");
+
+    if (error) throw error;
+
+    // Convert array to object
+    const settingsMap: Record<string, string> = {};
+    data?.forEach((row) => {
+      settingsMap[row.key] = row.value;
+    });
 
     // Validate required settings
     if (

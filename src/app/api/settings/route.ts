@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { kv } from "@vercel/kv";
-
-const SETTINGS_KEY = "app_settings";
+import { supabase } from "@/lib/supabase";
 
 export async function GET() {
   try {
-    const settings = await kv.get<Record<string, string>>(SETTINGS_KEY);
-    return NextResponse.json(settings || {});
+    const { data, error } = await supabase
+      .from("settings")
+      .select("key, value");
+
+    if (error) throw error;
+
+    // Convert array to object
+    const settings: Record<string, string> = {};
+    data?.forEach((row) => {
+      settings[row.key] = row.value;
+    });
+
+    return NextResponse.json(settings);
   } catch (error) {
     console.error("Error fetching settings:", error);
     return NextResponse.json(
@@ -28,9 +37,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const settings = await kv.get<Record<string, string>>(SETTINGS_KEY) || {};
-    settings[key] = value || "";
-    await kv.set(SETTINGS_KEY, settings);
+    // Upsert: update if exists, insert if not
+    const { error } = await supabase
+      .from("settings")
+      .upsert({ key, value: value || "" }, { onConflict: "key" });
+
+    if (error) throw error;
 
     return NextResponse.json({ key, value: value || "" });
   } catch (error) {
@@ -47,11 +59,18 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const newSettings = body as Record<string, string>;
 
-    const settings = await kv.get<Record<string, string>>(SETTINGS_KEY) || {};
-    Object.entries(newSettings).forEach(([key, value]) => {
-      settings[key] = value || "";
-    });
-    await kv.set(SETTINGS_KEY, settings);
+    // Prepare upsert data
+    const upsertData = Object.entries(newSettings).map(([key, value]) => ({
+      key,
+      value: value || "",
+    }));
+
+    // Batch upsert all settings
+    const { error } = await supabase
+      .from("settings")
+      .upsert(upsertData, { onConflict: "key" });
+
+    if (error) throw error;
 
     return NextResponse.json({ success: true });
   } catch (error) {
