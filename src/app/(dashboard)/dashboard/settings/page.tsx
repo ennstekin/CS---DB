@@ -8,6 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Settings,
   Link2,
   CheckCircle,
@@ -16,7 +23,13 @@ import {
   Eye,
   EyeOff,
   Download,
+  Brain,
+  Truck,
+  Tag,
+  FileText,
+  Store,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 
 export default function SettingsPage() {
@@ -25,16 +38,18 @@ export default function SettingsPage() {
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showMailPassword, setShowMailPassword] = useState(false);
   const [isFetchingMails, setIsFetchingMails] = useState(false);
+  const [isSyncingReturns, setIsSyncingReturns] = useState(false);
 
   // Form states
   const [ikasSettings, setIkasSettings] = useState({
-    ikas_api_url: "",
-    ikas_access_token: "",
+    ikas_store_name: "",
+    ikas_client_id: "",
+    ikas_client_secret: "",
   });
 
   const [openaiSettings, setOpenaiSettings] = useState({
     openai_api_key: "",
-    openai_model: "gpt-4",
+    openai_model: "gpt-4o-mini",
   });
 
   const [mailSettings, setMailSettings] = useState({
@@ -50,10 +65,26 @@ export default function SettingsPage() {
     mail_smtp_secure: "false",
   });
 
+  const [portalSettings, setPortalSettings] = useState({
+    portal_enabled: "true",
+    portal_url: "",
+  });
+
+  const [aiKnowledgeBase, setAiKnowledgeBase] = useState({
+    ai_kb_shipping: "",
+    ai_kb_campaigns: "",
+    ai_kb_return_policy: "",
+    ai_kb_general: "",
+    ai_kb_store_info: "",
+  });
+
+  const [isSavingKnowledge, setIsSavingKnowledge] = useState(false);
+
   const [connections, setConnections] = useState({
     ikas: { connected: false, testing: false, saving: false },
     openai: { connected: false, testing: false, saving: false },
     mail: { connected: false, testing: false, saving: false },
+    portal: { connected: false, testing: false, saving: false },
   });
 
   // Load settings on mount
@@ -68,13 +99,14 @@ export default function SettingsPage() {
         const data = await response.json();
 
         setIkasSettings({
-          ikas_api_url: data.ikas_api_url || "",
-          ikas_access_token: data.ikas_access_token || "",
+          ikas_store_name: data.ikas_store_name || "",
+          ikas_client_id: data.ikas_client_id || "",
+          ikas_client_secret: data.ikas_client_secret || "",
         });
 
         setOpenaiSettings({
           openai_api_key: data.openai_api_key || "",
-          openai_model: data.openai_model || "gpt-4",
+          openai_model: data.openai_model || "gpt-4o-mini",
         });
 
         setMailSettings({
@@ -90,10 +122,23 @@ export default function SettingsPage() {
           mail_smtp_secure: data.mail_smtp_secure || "false",
         });
 
+        setPortalSettings({
+          portal_enabled: data.portal_enabled || "true",
+          portal_url: data.portal_url || `${window.location.origin}/portal`,
+        });
+
+        setAiKnowledgeBase({
+          ai_kb_shipping: data.ai_kb_shipping || "",
+          ai_kb_campaigns: data.ai_kb_campaigns || "",
+          ai_kb_return_policy: data.ai_kb_return_policy || "",
+          ai_kb_general: data.ai_kb_general || "",
+          ai_kb_store_info: data.ai_kb_store_info || "",
+        });
+
         // Check which connections are configured
         setConnections({
           ikas: {
-            connected: !!(data.ikas_api_url && data.ikas_access_token),
+            connected: !!(data.ikas_client_id && data.ikas_client_secret),
             testing: false,
             saving: false
           },
@@ -107,6 +152,11 @@ export default function SettingsPage() {
             testing: false,
             saving: false
           },
+          portal: {
+            connected: data.portal_enabled === "true",
+            testing: false,
+            saving: false
+          },
         });
       }
     } catch (error) {
@@ -114,7 +164,7 @@ export default function SettingsPage() {
     }
   };
 
-  const saveSettings = async (service: "ikas" | "openai" | "mail", settings: Record<string, string>) => {
+  const saveSettings = async (service: "ikas" | "openai" | "mail" | "portal", settings: Record<string, string>) => {
     setConnections(prev => ({
       ...prev,
       [service]: { ...prev[service], saving: true }
@@ -183,6 +233,64 @@ export default function SettingsPage() {
     }
   };
 
+  const syncIkasReturns = async () => {
+    setIsSyncingReturns(true);
+
+    try {
+      const response = await fetch("/api/ikas/sync-returns", {
+        method: "POST",
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Başarılı",
+          description: data.message || `${data.newReturns} yeni iade çekildi`,
+        });
+      } else {
+        throw new Error(data.error || "İade senkronizasyonu başarısız");
+      }
+    } catch (error) {
+      toast({
+        title: "Hata",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncingReturns(false);
+    }
+  };
+
+  const saveAiKnowledgeBase = async () => {
+    setIsSavingKnowledge(true);
+
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(aiKnowledgeBase),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Başarılı",
+          description: "AI bilgi kaynağı kaydedildi",
+        });
+      } else {
+        throw new Error("Kaydetme başarısız");
+      }
+    } catch (error) {
+      toast({
+        title: "Hata",
+        description: "Bilgi kaynağı kaydedilemedi",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingKnowledge(false);
+    }
+  };
+
   return (
     <div className="flex-col">
       <div className="flex-1 space-y-4">
@@ -200,6 +308,10 @@ export default function SettingsPage() {
             <TabsTrigger value="integrations">
               <Link2 className="h-4 w-4 mr-2" />
               Bağlantılar
+            </TabsTrigger>
+            <TabsTrigger value="ai-knowledge">
+              <Brain className="h-4 w-4 mr-2" />
+              AI Bilgi Kaynağı
             </TabsTrigger>
             <TabsTrigger value="general">
               <Settings className="h-4 w-4 mr-2" />
@@ -233,22 +345,34 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>API URL</Label>
+                  <Label>Store Name</Label>
                   <Input
                     type="text"
-                    placeholder="https://api.myikas.com/api/v1/admin/graphql"
-                    value={ikasSettings.ikas_api_url}
-                    onChange={(e) => setIkasSettings({ ...ikasSettings, ikas_api_url: e.target.value })}
+                    placeholder="mystore (mystore.myikas.com)"
+                    value={ikasSettings.ikas_store_name}
+                    onChange={(e) => setIkasSettings({ ...ikasSettings, ikas_store_name: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Mağaza URL'inizden sadece isim kısmını girin (örn: "mystore" → mystore.myikas.com)
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Client ID</Label>
+                  <Input
+                    type="text"
+                    placeholder="your_client_id"
+                    value={ikasSettings.ikas_client_id}
+                    onChange={(e) => setIkasSettings({ ...ikasSettings, ikas_client_id: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Access Token</Label>
+                  <Label>Client Secret</Label>
                   <div className="flex gap-2">
                     <Input
                       type={showIkasToken ? "text" : "password"}
                       placeholder="••••••••••••••••"
-                      value={ikasSettings.ikas_access_token}
-                      onChange={(e) => setIkasSettings({ ...ikasSettings, ikas_access_token: e.target.value })}
+                      value={ikasSettings.ikas_client_secret}
+                      onChange={(e) => setIkasSettings({ ...ikasSettings, ikas_client_secret: e.target.value })}
                     />
                     <Button
                       variant="outline"
@@ -258,6 +382,9 @@ export default function SettingsPage() {
                       {showIkasToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    İkas admin panelinden API ayarlarından alın
+                  </p>
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -266,6 +393,18 @@ export default function SettingsPage() {
                   >
                     {connections.ikas.saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Kaydet
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={syncIkasReturns}
+                    disabled={isSyncingReturns || !connections.ikas.connected}
+                  >
+                    {isSyncingReturns ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
+                    İade Siparişlerini Çek
                   </Button>
                 </div>
               </CardContent>
@@ -311,12 +450,23 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Model</Label>
-                  <Input
-                    type="text"
-                    placeholder="gpt-4"
+                  <Select
                     value={openaiSettings.openai_model}
-                    onChange={(e) => setOpenaiSettings({ ...openaiSettings, openai_model: e.target.value })}
-                  />
+                    onValueChange={(value) => setOpenaiSettings({ ...openaiSettings, openai_model: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Model seçin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="gpt-4o-mini">GPT-4o Mini (Önerilen - Ekonomik)</SelectItem>
+                      <SelectItem value="gpt-4o">GPT-4o (Güçlü)</SelectItem>
+                      <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
+                      <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo (En Ekonomik)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    GPT-4o Mini önerilir: Yüksek kalite, düşük maliyet
+                  </p>
                 </div>
                 <Button
                   onClick={() => saveSettings("openai", openaiSettings)}
@@ -468,19 +618,244 @@ export default function SettingsPage() {
             </Card>
           </TabsContent>
 
-          {/* Genel Tab */}
-          <TabsContent value="general">
+          {/* AI Bilgi Kaynağı Tab */}
+          <TabsContent value="ai-knowledge" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Genel Ayarlar</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Brain className="h-5 w-5" />
+                  AI Mail Bilgi Kaynağı
+                </CardTitle>
                 <CardDescription>
-                  Uygulama genel ayarları
+                  AI'ın mail cevaplarında kullanacağı bilgileri buraya yazın. Bu bilgiler müşteri maillerine cevap oluştururken kullanılacaktır.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Yakında eklenecek...
-                </p>
+              <CardContent className="space-y-6">
+                {/* Mağaza Bilgileri */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Store className="h-4 w-4" />
+                    Mağaza Bilgileri
+                  </Label>
+                  <Textarea
+                    placeholder="Mağaza adı, çalışma saatleri, iletişim bilgileri, genel tanıtım...
+
+Örnek:
+- Mağaza Adı: Paen Store
+- Çalışma Saatleri: Hafta içi 09:00-18:00
+- Telefon: 0850 XXX XX XX
+- Adres: İstanbul, Türkiye"
+                    value={aiKnowledgeBase.ai_kb_store_info}
+                    onChange={(e) => setAiKnowledgeBase({ ...aiKnowledgeBase, ai_kb_store_info: e.target.value })}
+                    rows={5}
+                  />
+                </div>
+
+                {/* Kargo Bilgileri */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Truck className="h-4 w-4" />
+                    Kargo ve Teslimat Bilgileri
+                  </Label>
+                  <Textarea
+                    placeholder="Kargo ücretleri, teslimat süreleri, kargo firmaları...
+
+Örnek:
+- 500 TL üzeri siparişlerde ücretsiz kargo
+- Standart kargo: 49.90 TL
+- Teslimat süresi: 2-4 iş günü
+- Kargo firması: Yurtiçi Kargo, Aras Kargo"
+                    value={aiKnowledgeBase.ai_kb_shipping}
+                    onChange={(e) => setAiKnowledgeBase({ ...aiKnowledgeBase, ai_kb_shipping: e.target.value })}
+                    rows={5}
+                  />
+                </div>
+
+                {/* Kampanyalar */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Tag className="h-4 w-4" />
+                    Aktif Kampanyalar ve İndirimler
+                  </Label>
+                  <Textarea
+                    placeholder="Mevcut kampanyalar, indirim kodları, özel fırsatlar...
+
+Örnek:
+- YAZ2024 kodu ile %20 indirim
+- 2 al 1 öde kampanyası (seçili ürünlerde)
+- İlk siparişe özel %15 indirim"
+                    value={aiKnowledgeBase.ai_kb_campaigns}
+                    onChange={(e) => setAiKnowledgeBase({ ...aiKnowledgeBase, ai_kb_campaigns: e.target.value })}
+                    rows={5}
+                  />
+                </div>
+
+                {/* İade Politikası */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    İade ve Değişim Politikası
+                  </Label>
+                  <Textarea
+                    placeholder="İade koşulları, süreleri, prosedürler...
+
+Örnek:
+- 14 gün içinde ücretsiz iade
+- Ürünler kullanılmamış ve etiketli olmalı
+- İade kargo ücreti müşteriye aittir
+- Para iadesi 3-5 iş günü içinde yapılır"
+                    value={aiKnowledgeBase.ai_kb_return_policy}
+                    onChange={(e) => setAiKnowledgeBase({ ...aiKnowledgeBase, ai_kb_return_policy: e.target.value })}
+                    rows={5}
+                  />
+                </div>
+
+                {/* Genel Bilgiler */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Diğer Bilgiler
+                  </Label>
+                  <Textarea
+                    placeholder="Sık sorulan sorular, özel durumlar, ek bilgiler...
+
+Örnek:
+- Hediye paketi seçeneği mevcut (+25 TL)
+- Fatura bilgisi siparişten sonra değiştirilemez
+- Kapıda ödeme seçeneği aktif"
+                    value={aiKnowledgeBase.ai_kb_general}
+                    onChange={(e) => setAiKnowledgeBase({ ...aiKnowledgeBase, ai_kb_general: e.target.value })}
+                    rows={5}
+                  />
+                </div>
+
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                    <Brain className="h-4 w-4" />
+                    Nasıl Çalışır?
+                  </h4>
+                  <ul className="text-sm space-y-1 text-muted-foreground">
+                    <li>• AI, mail cevabı oluştururken bu bilgileri referans alır</li>
+                    <li>• Ne kadar detaylı yazarsanız, cevaplar o kadar doğru olur</li>
+                    <li>• Değişen bilgileri (kampanyalar vb.) güncel tutun</li>
+                    <li>• Müşterilere vermek istemediğiniz bilgileri yazmayın</li>
+                  </ul>
+                </div>
+
+                <Button
+                  onClick={saveAiKnowledgeBase}
+                  disabled={isSavingKnowledge}
+                  className="w-full"
+                >
+                  {isSavingKnowledge && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Bilgi Kaynağını Kaydet
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Genel Tab */}
+          <TabsContent value="general" className="space-y-4">
+            {/* Portal Ayarları */}
+            <Card>
+              <CardHeader>
+                <CardTitle>İade Portalı Ayarları</CardTitle>
+                <CardDescription>
+                  Müşteri self-service iade portalı ayarları
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Portal Durumu</Label>
+                  <Select
+                    value={portalSettings.portal_enabled}
+                    onValueChange={(value) => setPortalSettings({ ...portalSettings, portal_enabled: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="true">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <span>Aktif</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="false">
+                        <div className="flex items-center gap-2">
+                          <XCircle className="h-4 w-4 text-red-600" />
+                          <span>Pasif</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Portal aktif olduğunda müşteriler kendi iadelerini oluşturabilir
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Portal URL</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      value={portalSettings.portal_url}
+                      readOnly
+                      className="bg-muted"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(portalSettings.portal_url);
+                        toast({
+                          title: "Kopyalandı",
+                          description: "Portal URL kopyalandı",
+                        });
+                      }}
+                    >
+                      Kopyala
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => window.open(portalSettings.portal_url, "_blank")}
+                    >
+                      Aç
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Bu URL'yi müşterilerinizle paylaşın
+                  </p>
+                </div>
+
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="font-semibold text-sm mb-2">Entegrasyon Örnekleri</h4>
+                  <div className="space-y-3 text-sm">
+                    <div>
+                      <p className="font-medium mb-1">E-posta İmzası:</p>
+                      <code className="block p-2 bg-white rounded text-xs">
+                        İade talebi için: {portalSettings.portal_url}
+                      </code>
+                    </div>
+                    <div>
+                      <p className="font-medium mb-1">Web Sitesi Link:</p>
+                      <code className="block p-2 bg-white rounded text-xs overflow-x-auto">
+                        {'<a href="' + portalSettings.portal_url + '">İade Talebi Oluştur</a>'}
+                      </code>
+                    </div>
+                    <div>
+                      <p className="font-medium mb-1">WhatsApp/SMS Mesaj:</p>
+                      <code className="block p-2 bg-white rounded text-xs">
+                        Siparişinizi iade etmek için: {portalSettings.portal_url}
+                      </code>
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => saveSettings("portal", portalSettings)}
+                >
+                  Kaydet
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>

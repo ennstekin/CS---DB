@@ -37,28 +37,10 @@ export function AiReplyDialog({ open, onOpenChange, mail }: AiReplyDialogProps) 
   const [editedResponse, setEditedResponse] = useState("");
   const [isEditing, setIsEditing] = useState(false);
 
-  // Dialog açıldığında önerilen cevabı hazırla
+  // Dialog açıldığında otomatik olarak AI yanıtı üret
   useEffect(() => {
-    if (open && mail) {
-      const suggestedReply = `Sayın Müşterimiz,
-
-Talebiniz için teşekkür ederiz. Siparişinizin durumunu inceledik ve size güncel bilgileri sunmak isteriz.
-
-Siparişiniz ${mail.suggestedOrderIds?.[0] || 'sistemimizde'} kayıtlı olup, kargo sürecindedir. En kısa sürede size ulaştırılacaktır.
-
-Herhangi bir sorunuz olursa lütfen bizimle iletişime geçmekten çekinmeyin.
-
-Saygılarımızla,
-Müşteri Hizmetleri`;
-
-      setEditedResponse(suggestedReply);
-      setAiResponse({
-        suggestedResponse: suggestedReply,
-        tone: "professional",
-        confidence: 0.9,
-        reasoning: "Önerilen yanıt hazırlandı"
-      });
-      setIsEditing(true);
+    if (open && mail && !aiResponse && !isGenerating) {
+      handleGenerateReply();
     }
   }, [open, mail]);
 
@@ -66,30 +48,45 @@ Müşteri Hizmetleri`;
   const handleGenerateReply = async () => {
     if (!mail) return;
 
+    console.log("🚀 Generating AI reply for mail:", {
+      fromEmail: mail.fromEmail,
+      subject: mail.subject,
+      aiCategory: mail.aiCategory,
+      hasCategory: !!mail.aiCategory
+    });
+
     setIsGenerating(true);
     setAiResponse(null);
 
     try {
-      const response = await fetch("/api/ai/generate-reply", {
+      const requestBody = {
+        from: mail.fromEmail,
+        subject: mail.subject,
+        body: mail.bodyText,
+        category: mail.aiCategory,
+      };
+
+      console.log("📤 Sending request to API (v2 - clean):", requestBody);
+
+      const response = await fetch("/api/ai/generate-reply-v2", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from: mail.fromEmail,
-          subject: mail.subject,
-          body: mail.bodyText,
-          category: mail.aiCategory,
-          suggestedOrderNumbers: mail.suggestedOrderIds || [],
-        }),
+        body: JSON.stringify(requestBody),
       });
 
-      if (!response.ok) throw new Error("Failed to generate reply");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to generate reply");
+      }
 
       const data: MailResponseResult = await response.json();
       setAiResponse(data);
       setEditedResponse(data.suggestedResponse);
+      setIsEditing(true);
     } catch (error) {
       console.error("Error generating reply:", error);
-      alert("Yanıt oluşturulurken bir hata oluştu. Lütfen tekrar deneyin.");
+      const errorMessage = error instanceof Error ? error.message : "Bilinmeyen bir hata oluştu";
+      alert(`Yanıt oluşturulamadı:\n\n${errorMessage}`);
     } finally {
       setIsGenerating(false);
     }
@@ -121,13 +118,8 @@ Müşteri Hizmetleri`;
       const data = await response.json();
       alert(`Mail başarıyla gönderildi!\n\nAlıcı: ${mail.fromEmail}\nKonu: Re: ${mail.subject}`);
 
-      // Dialog'u kapat ve state'i temizle
-      onOpenChange(false);
-      setTimeout(() => {
-        setAiResponse(null);
-        setEditedResponse("");
-        setIsEditing(false);
-      }, 300);
+      // Dialog'u kapat (handleOpenChange state'i temizleyecek)
+      handleOpenChange(false);
     } catch (error) {
       console.error("Error sending mail:", error);
       alert("Mail gönderilirken bir hata oluştu: " + (error as Error).message);
@@ -148,8 +140,21 @@ Müşteri Hizmetleri`;
     apologetic: "bg-orange-500",
   };
 
+  // Dialog kapanırken state'i temizle
+  const handleOpenChange = (newOpen: boolean) => {
+    onOpenChange(newOpen);
+    if (!newOpen) {
+      // Dialog kapandığında state'i temizle
+      setTimeout(() => {
+        setAiResponse(null);
+        setEditedResponse("");
+        setIsEditing(false);
+      }, 300);
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -171,18 +176,6 @@ Müşteri Hizmetleri`;
               </p>
               <p className="text-xs text-gray-500 line-clamp-3">{mail.bodyText}</p>
             </div>
-          )}
-
-          {/* AI Yanıt Üretme Butonu */}
-          {!aiResponse && !isGenerating && (
-            <Button
-              onClick={handleGenerateReply}
-              className="w-full"
-              size="lg"
-            >
-              <Sparkles className="h-4 w-4 mr-2" />
-              AI ile Otomatik Yanıt Oluştur
-            </Button>
           )}
 
           {/* Loading State */}
@@ -262,7 +255,7 @@ Müşteri Hizmetleri`;
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => handleOpenChange(false)}
             disabled={isSending}
           >
             İptal

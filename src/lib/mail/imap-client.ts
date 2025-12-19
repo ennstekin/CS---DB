@@ -18,6 +18,8 @@ export interface FetchedMail {
   receivedAt: Date;
   messageId?: string;
   inReplyTo?: string;
+  labels?: string[];
+  flags?: string[];
 }
 
 export class ImapMailClient {
@@ -64,6 +66,19 @@ export class ImapMailClient {
   }
 
   async fetchUnreadMails(limit: number = 50): Promise<FetchedMail[]> {
+    return this.fetchMailsBySearch(["UNSEEN"], limit);
+  }
+
+  async fetchRecentMails(limit: number = 50): Promise<FetchedMail[]> {
+    // Fetch all mails from the last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const dateString = thirtyDaysAgo.toISOString().split('T')[0].replace(/-/g, '-');
+
+    return this.fetchMailsBySearch(["ALL", ["SINCE", dateString]], limit);
+  }
+
+  private async fetchMailsBySearch(searchCriteria: any[], limit: number): Promise<FetchedMail[]> {
     try {
       await this.connect();
       await this.openInbox();
@@ -78,7 +93,7 @@ export class ImapMailClient {
           return;
         }
 
-        this.imap.search(["UNSEEN"], (err, results) => {
+        this.imap.search(searchCriteria, (err, results) => {
           if (err) {
             reject(err);
             return;
@@ -90,8 +105,8 @@ export class ImapMailClient {
             return;
           }
 
-          // Limit results
-          const messageIds = results.slice(0, limit);
+          // Get most recent messages by reversing and limiting
+          const messageIds = results.reverse().slice(0, limit);
           const fetchedMails: FetchedMail[] = [];
 
           const fetch = this.imap!.fetch(messageIds, {
@@ -100,6 +115,12 @@ export class ImapMailClient {
           });
 
           fetch.on("message", (msg) => {
+            let attributes: any = null;
+
+            msg.once("attributes", (attrs) => {
+              attributes = attrs;
+            });
+
             msg.on("body", (stream) => {
               let buffer = Buffer.from("");
 
@@ -111,6 +132,10 @@ export class ImapMailClient {
                 try {
                   const parsed = await this.parseEmail(buffer);
 
+                  // Extract flags and labels
+                  const flags = attributes?.flags || [];
+                  const labels = attributes?.['x-gm-labels'] || [];
+
                   fetchedMails.push({
                     from: parsed.from?.text || "",
                     subject: parsed.subject || "",
@@ -119,6 +144,8 @@ export class ImapMailClient {
                     receivedAt: parsed.date || new Date(),
                     messageId: parsed.messageId,
                     inReplyTo: parsed.inReplyTo,
+                    labels: Array.isArray(labels) ? labels : [],
+                    flags: Array.isArray(flags) ? flags : [],
                   });
                 } catch (parseError) {
                   console.error("Error parsing email:", parseError);
@@ -159,6 +186,99 @@ export class ImapMailClient {
   disconnect(): void {
     if (this.imap) {
       this.imap.end();
+    }
+  }
+
+  // Gmail/IMAP'de label ekle
+  async addLabel(messageId: string, label: string): Promise<boolean> {
+    try {
+      await this.connect();
+      await this.openInbox();
+
+      if (!this.imap) {
+        throw new Error("IMAP connection not established");
+      }
+
+      return new Promise((resolve, reject) => {
+        if (!this.imap) {
+          reject(new Error("IMAP connection not established"));
+          return;
+        }
+
+        // Gmail için X-GM-LABELS kullan, diğer IMAP sunucuları için keyword
+        this.imap.search([['HEADER', 'MESSAGE-ID', messageId]], (err, results) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          if (!results || results.length === 0) {
+            reject(new Error("Message not found"));
+            return;
+          }
+
+          // Gmail için label ekle (Gmail-specific method)
+          (this.imap as any).addLabels(results, label, (addErr: Error | null) => {
+            this.imap?.end();
+            if (addErr) {
+              reject(addErr);
+            } else {
+              resolve(true);
+            }
+          });
+        });
+      });
+    } catch (error) {
+      if (this.imap) {
+        this.imap.end();
+      }
+      throw error;
+    }
+  }
+
+  // Gmail/IMAP'den label sil
+  async removeLabel(messageId: string, label: string): Promise<boolean> {
+    try {
+      await this.connect();
+      await this.openInbox();
+
+      if (!this.imap) {
+        throw new Error("IMAP connection not established");
+      }
+
+      return new Promise((resolve, reject) => {
+        if (!this.imap) {
+          reject(new Error("IMAP connection not established"));
+          return;
+        }
+
+        this.imap.search([['HEADER', 'MESSAGE-ID', messageId]], (err, results) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          if (!results || results.length === 0) {
+            reject(new Error("Message not found"));
+            return;
+          }
+
+          // Gmail için label sil (Gmail-specific method)
+          (this.imap as any).delLabels(results, label, (delErr: Error | null) => {
+            this.imap?.end();
+            if (delErr) {
+              reject(delErr);
+            } else {
+              resolve(true);
+            }
+          });
+        });
+      });
+    } catch (error) {
+      if (this.imap) {
+        this.imap.end();
+      }
+      throw error;
     }
   }
 }

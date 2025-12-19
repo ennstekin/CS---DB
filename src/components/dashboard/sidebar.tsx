@@ -27,7 +27,6 @@ const routes = [
     label: "Çağrılar",
     icon: Phone,
     href: "/dashboard/calls",
-    disabled: true, // Yakında
   },
   {
     label: "Müşteriler",
@@ -39,7 +38,6 @@ const routes = [
     label: "İadeler",
     icon: RotateCcw,
     href: "/dashboard/returns",
-    disabled: true, // Yakında
   },
   {
     label: "Ayarlar",

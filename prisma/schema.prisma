@@ -258,8 +258,10 @@ model Mail {
   // Mail Metadata
   messageId       String?    @unique
   inReplyTo       String?
-  references      String[]
+  mailReferences  String[]
   attachments     Json?      // Attachment metadata array
+  labels          String[]   // Gmail labels / IMAP folders
+  flags           String[]   // IMAP flags (SEEN, FLAGGED, etc.)
 
   receivedAt      DateTime?
   sentAt          DateTime?
@@ -314,6 +316,7 @@ model Return {
   status            ReturnStatus
   reason            String
   reasonDetail      String?      @db.Text
+  source            String       @default("portal") // portal, ikas, manual
 
   items             ReturnItem[]
 
@@ -327,6 +330,7 @@ model Return {
   updatedAt         DateTime     @updatedAt
 
   notes             Note[]
+  timeline          ReturnTimeline[]
 
   @@map("returns")
   @@index([customerId])
@@ -364,6 +368,22 @@ enum RefundStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+model ReturnTimeline {
+  id          String   @id @default(cuid())
+  returnId    String
+  return      Return   @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  eventType   String   // created, status_changed, note_added, approved, rejected, etc.
+  eventData   Json?    // Additional event metadata
+  description String?  @db.Text
+  createdBy   String?  // User ID who triggered the event
+  createdAt   DateTime @default(now())
+
+  @@map("return_timeline")
+  @@index([returnId])
+  @@index([createdAt])
 }
 
 // ==================== NOTES (GENEL NOTLAR) ====================

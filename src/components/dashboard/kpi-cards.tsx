@@ -1,7 +1,33 @@
+"use client";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mail, CheckCircle, Clock, TrendingUp } from "lucide-react";
+import { useEffect, useState } from "react";
+
+interface KpiData {
+  totalMails: number;
+  pendingMails: number;
+  resolvedMails: number;
+}
 
 export function KpiCards() {
+  const [kpiData, setKpiData] = useState<KpiData>({
+    totalMails: 0,
+    pendingMails: 0,
+    resolvedMails: 0,
+  });
+
+  useEffect(() => {
+    fetch("/api/dashboard/kpi")
+      .then((res) => res.json())
+      .then((data) => setKpiData(data))
+      .catch((err) => console.error("Failed to load KPI data:", err));
+  }, []);
+
+  const aiAccuracy = kpiData.totalMails > 0
+    ? Math.round((kpiData.resolvedMails / kpiData.totalMails) * 100)
+    : 0;
+
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       <Card>
@@ -10,9 +36,9 @@ export function KpiCards() {
           <Mail className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">156</div>
+          <div className="text-2xl font-bold">{kpiData.totalMails}</div>
           <p className="text-xs text-muted-foreground">
-            <span className="text-blue-600">+23</span> bu hafta
+            Tüm mailler
           </p>
         </CardContent>
       </Card>
@@ -23,9 +49,9 @@ export function KpiCards() {
           <Clock className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">48</div>
+          <div className="text-2xl font-bold">{kpiData.pendingMails}</div>
           <p className="text-xs text-muted-foreground">
-            <span className="text-yellow-600">12</span> yüksek öncelik
+            Yanıt bekliyor
           </p>
         </CardContent>
       </Card>
@@ -36,22 +62,22 @@ export function KpiCards() {
           <CheckCircle className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">108</div>
+          <div className="text-2xl font-bold">{kpiData.resolvedMails}</div>
           <p className="text-xs text-muted-foreground">
-            <span className="text-green-600">+18%</span> geçen haftaya göre
+            Tamamlandı
           </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">AI Eşleştirme</CardTitle>
+          <CardTitle className="text-sm font-medium">AI Başarı</CardTitle>
           <TrendingUp className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">87%</div>
+          <div className="text-2xl font-bold">{aiAccuracy}%</div>
           <p className="text-xs text-muted-foreground">
-            <span className="text-green-600">+5.2%</span> bu ay
+            Çözülme oranı
           </p>
         </CardContent>
       </Card>

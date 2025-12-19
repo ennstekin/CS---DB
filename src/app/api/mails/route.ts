@@ -51,22 +51,59 @@ export async function GET(request: NextRequest) {
     }
 
     // Convert DB format to frontend format
-    const dbMails = mails.map(mail => ({
-      id: mail.id,
-      fromEmail: mail.from_email,
-      toEmail: mail.to_email || "support@company.com",
-      subject: mail.subject || "(No Subject)",
-      bodyText: mail.body_text || "",
-      status: mail.status,
-      priority: mail.priority,
-      isAiAnalyzed: mail.is_ai_analyzed,
-      aiCategory: mail.ai_category,
-      aiSummary: mail.ai_summary,
-      suggestedOrderIds: mail.suggested_order_ids || [],
-      matchConfidence: mail.match_confidence,
-      receivedAt: new Date(mail.received_at || mail.created_at),
-      createdAt: new Date(mail.created_at),
-    }));
+    const dbMails = mails.map(mail => {
+      // Basit kategori tahmini (eğer yoksa)
+      let category = mail.ai_category;
+      if (!category) {
+        const subject = (mail.subject || "").toLowerCase();
+        const body = (mail.body_text || "").toLowerCase();
+        const text = subject + " " + body;
+
+        // Önce özel durumları kontrol et (daha spesifik olanlar önce)
+        if (text.includes("yanlış") || text.includes("hatalı") || text.includes("farklı")) {
+          category = "WRONG_ITEM";
+        } else if (text.includes("iade") || text.includes("geri gönder") || text.includes("iade et")) {
+          category = "RETURN_REQUEST";
+        } else if (text.includes("beden") || text.includes("değişim") || text.includes("değiş")) {
+          category = "SIZE_EXCHANGE";
+        } else if (text.includes("teşekkür") || text.includes("memnun") || text.includes("harika")) {
+          category = "POSITIVE_FEEDBACK";
+        } else if (text.includes("fatura")) {
+          category = "INVOICE_REQUEST";
+        } else if (text.includes("indirim") || text.includes("kod") || text.includes("kupon")) {
+          category = "DISCOUNT_ISSUE";
+        } else if (text.includes("takip") || text.includes("nerede") || text.includes("ulaştı mı")) {
+          category = "TRACKING_INQUIRY";
+        } else if (text.includes("sipariş") || text.includes("kargo") || text.includes("#")) {
+          category = "ORDER_INQUIRY";
+        } else {
+          category = "ORDER_INQUIRY"; // Varsayılan
+        }
+      }
+
+      return {
+        id: mail.id,
+        fromEmail: mail.from_email,
+        toEmail: mail.to_email || "support@company.com",
+        subject: mail.subject || "(No Subject)",
+        bodyText: mail.body_text || "",
+        status: mail.status,
+        priority: mail.priority,
+        isAiAnalyzed: mail.is_ai_analyzed || true,
+        aiCategory: category,
+        aiSummary: mail.ai_summary || "Mail otomatik olarak kategorize edildi",
+        suggestedOrderIds: mail.suggested_order_ids || [],
+        matchConfidence: mail.match_confidence || 0.7,
+        receivedAt: new Date(mail.received_at || mail.created_at),
+        createdAt: new Date(mail.created_at),
+        matchedOrderNumber: mail.matched_order_number || null,
+        isMatchedWithOrder: mail.is_matched_with_order || false,
+        matchedReturnId: mail.matched_return_id || null,
+        matchedReturnNumber: mail.matched_return_number || null,
+        labels: mail.labels || [],
+        flags: mail.flags || [],
+      };
+    });
 
     return NextResponse.json(dbMails);
   } catch (error) {
