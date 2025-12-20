@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
     const limit = parseInt(searchParams.get("limit") || "50");
-    const source = searchParams.get("source") || "ikas"; // ikas or db
+    const source = searchParams.get("source") || "db"; // db (fast) or ikas (slow, real-time)
 
     // Try to fetch from İkas first
     if (source === "ikas") {

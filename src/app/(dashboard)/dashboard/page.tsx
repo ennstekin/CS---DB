@@ -48,10 +48,10 @@ export default function DashboardPage() {
     try {
       setLoading(true);
 
-      // Parallel fetch for better performance
+      // Parallel fetch for better performance (use source=db for fast local queries)
       const [mailsRes, returnsRes] = await Promise.all([
         fetch("/api/mails?limit=100"),
-        fetch("/api/returns?status=all&limit=100"),
+        fetch("/api/returns?status=all&limit=100&source=db"),
       ]);
 
       const mailsData = await mailsRes.json();
