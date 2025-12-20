@@ -34,6 +34,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { OrderDetailDialog } from "@/components/dashboard/order-detail-dialog";
+import { stripEmailQuotes, stripEmailQuotesHtml } from "@/lib/utils/strip-email-quotes";
 
 interface TimelineItem {
   id: string;
@@ -614,8 +615,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         {item.type === "mail" && item.contentHtml ? (
                           <div
                             className="text-sm prose prose-sm max-w-none dark:prose-invert"
-                            dangerouslySetInnerHTML={{ __html: item.contentHtml }}
+                            dangerouslySetInnerHTML={{ __html: stripEmailQuotesHtml(item.contentHtml) }}
                           />
+                        ) : item.type === "mail" && item.content ? (
+                          <div className="text-sm whitespace-pre-wrap">
+                            {stripEmailQuotes(item.content)}
+                          </div>
                         ) : item.content ? (
                           <div className="text-sm whitespace-pre-wrap">
                             {item.content}
