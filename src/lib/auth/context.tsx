@@ -1,7 +1,7 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { createContext, useContext, useEffect, useState, useMemo, ReactNode } from 'react'
+import { createBrowserClient } from '@supabase/ssr'
 import type { User, Session } from '@supabase/supabase-js'
 
 export type UserRole = 'ADMIN' | 'SUPERVISOR' | 'AGENT'
@@ -37,9 +37,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const supabase = createClient()
+  // Memoize Supabase client to prevent recreation on every render
+  const supabase = useMemo(() => createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  ), [])
 
   const fetchAppUser = async (userId: string) => {
+    console.log('🔍 Fetching app user for ID:', userId)
+
     const { data, error } = await supabase
       .from('app_users')
       .select('*')
@@ -47,12 +53,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .single()
 
     if (error) {
-      console.error('Error fetching app user:', error)
+      console.error('❌ Error fetching app user:', error.message, error.code, error.details)
       setAppUser(null)
       return
     }
 
     if (data) {
+      console.log('✅ App user loaded:', data.email, data.role)
       setAppUser({
         id: data.id,
         email: data.email,
@@ -63,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updatedAt: data.updated_at,
       })
     } else {
+      console.log('⚠️ No app user data found')
       setAppUser(null)
     }
   }
