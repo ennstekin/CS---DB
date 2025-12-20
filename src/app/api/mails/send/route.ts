@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendMailAndSave, SmtpConfig } from "@/lib/mail/smtp-client";
 import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
+import { logActivity } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -149,6 +151,35 @@ export async function POST(request: NextRequest) {
 
       console.log(`✅ Ticket ${effectiveTicketId} status updated to WAITING_CUSTOMER`);
     }
+
+    // Log activity
+    const authSupabase = await createClient();
+    const { data: { user } } = await authSupabase.auth.getUser();
+    let appUser = null;
+    if (user) {
+      const { data } = await authSupabase
+        .from("app_users")
+        .select("email, role")
+        .eq("id", user.id)
+        .single();
+      appUser = data;
+    }
+
+    await logActivity({
+      userId: user?.id,
+      userEmail: appUser?.email,
+      userRole: appUser?.role,
+      action: "SEND",
+      entityType: "mail",
+      entityId: savedOutboundMail?.id,
+      description: `Mail gönderildi: ${to}`,
+      newValues: {
+        to,
+        subject,
+        ticketId: effectiveTicketId,
+        originalMailId,
+      },
+    });
 
     return NextResponse.json({
       success: true,

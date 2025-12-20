@@ -34,9 +34,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth/context";
 import { UserManagement } from "@/components/dashboard/user-management";
+import { ActivityLogViewer } from "@/components/dashboard/activity-log-viewer";
+import { History } from "lucide-react";
 
 export default function SettingsPage() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isSupervisor } = useAuth();
   const { toast } = useToast();
   const [showIkasToken, setShowIkasToken] = useState(false);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
@@ -329,6 +331,12 @@ export default function SettingsPage() {
               <TabsTrigger value="users">
                 <Users className="h-4 w-4 mr-2" />
                 Kullanıcılar
+              </TabsTrigger>
+            )}
+            {(isAdmin || isSupervisor) && (
+              <TabsTrigger value="logs">
+                <History className="h-4 w-4 mr-2" />
+                Loglar
               </TabsTrigger>
             )}
           </TabsList>
@@ -933,6 +941,11 @@ Türkçe yaz."
               </Card>
             </TabsContent>
           )}
+
+          {/* Loglar Tab (Admin/Supervisor Only) */}
+          <TabsContent value="logs" className="space-y-4">
+            <ActivityLogViewer isAdmin={isAdmin} />
+          </TabsContent>
         </Tabs>
       </div>
     </div>

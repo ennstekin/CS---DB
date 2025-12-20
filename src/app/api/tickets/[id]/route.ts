@@ -7,6 +7,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/server';
+import { logActivity } from '@/lib/logger';
 
 export async function GET(
   request: NextRequest,
@@ -172,6 +174,35 @@ export async function PATCH(
       });
     }
 
+    // Log activity
+    const authSupabase = await createClient();
+    const { data: { user } } = await authSupabase.auth.getUser();
+    let appUser = null;
+    if (user) {
+      const { data } = await authSupabase
+        .from('app_users')
+        .select('email, role')
+        .eq('id', user.id)
+        .single();
+      appUser = data;
+    }
+
+    const action = status ? 'STATUS_CHANGE' : 'UPDATE';
+    const description = status
+      ? `Talep durumu değiştirildi: ${status}`
+      : `Talep güncellendi`;
+
+    await logActivity({
+      userId: user?.id,
+      userEmail: appUser?.email,
+      userRole: appUser?.role,
+      action,
+      entityType: 'ticket',
+      entityId: id,
+      description,
+      newValues: updates,
+    });
+
     return NextResponse.json({
       success: true,
       ticket: {
@@ -198,6 +229,13 @@ export async function DELETE(
   try {
     const { id } = await params;
 
+    // Get ticket info before deletion for logging
+    const { data: ticketInfo } = await supabase
+      .from('tickets')
+      .select('ticket_number, subject, customer_email')
+      .eq('id', id)
+      .single();
+
     // First unlink mails from ticket
     await supabase
       .from('mails')
@@ -214,6 +252,34 @@ export async function DELETE(
       console.error('Error deleting ticket:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // Log activity
+    const authSupabase = await createClient();
+    const { data: { user } } = await authSupabase.auth.getUser();
+    let appUser = null;
+    if (user) {
+      const { data } = await authSupabase
+        .from('app_users')
+        .select('email, role')
+        .eq('id', user.id)
+        .single();
+      appUser = data;
+    }
+
+    await logActivity({
+      userId: user?.id,
+      userEmail: appUser?.email,
+      userRole: appUser?.role,
+      action: 'DELETE',
+      entityType: 'ticket',
+      entityId: id,
+      description: `Talep silindi: #${ticketInfo?.ticket_number || id}`,
+      oldValues: ticketInfo ? {
+        ticketNumber: ticketInfo.ticket_number,
+        subject: ticketInfo.subject,
+        customerEmail: ticketInfo.customer_email,
+      } : undefined,
+    });
 
     return NextResponse.json({ success: true });
 

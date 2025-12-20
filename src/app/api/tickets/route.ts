@@ -6,6 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/server';
+import { logActivity, logError } from '@/lib/logger';
 
 interface TicketMail {
   id: string;
@@ -176,6 +178,35 @@ export async function POST(request: NextRequest) {
       ticket_id: ticket.id,
       event_type: 'ticket_created',
       event_data: { subject },
+    });
+
+    // Log activity
+    const authSupabase = await createClient();
+    const { data: { user } } = await authSupabase.auth.getUser();
+    let appUser = null;
+    if (user) {
+      const { data } = await authSupabase
+        .from('app_users')
+        .select('email, role')
+        .eq('id', user.id)
+        .single();
+      appUser = data;
+    }
+
+    await logActivity({
+      userId: user?.id,
+      userEmail: appUser?.email,
+      userRole: appUser?.role,
+      action: 'CREATE',
+      entityType: 'ticket',
+      entityId: ticket.id,
+      description: `Talep oluşturuldu: ${subject}`,
+      newValues: {
+        subject: ticket.subject,
+        status: ticket.status,
+        priority: ticket.priority,
+        customerEmail: cleanEmail,
+      },
     });
 
     // If description provided, add it as a note

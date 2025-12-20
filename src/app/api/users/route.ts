@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { logActivity } from '@/lib/logger'
 
 // GET - List all users (Admin only)
 export async function GET() {
@@ -111,6 +112,24 @@ export async function POST(request: NextRequest) {
       await adminClient.auth.admin.deleteUser(authData.user.id)
       return NextResponse.json({ error: insertError.message }, { status: 500 })
     }
+
+    // Log activity
+    const { data: adminUser } = await supabase
+      .from('app_users')
+      .select('email, role')
+      .eq('id', user.id)
+      .single()
+
+    await logActivity({
+      userId: user.id,
+      userEmail: adminUser?.email,
+      userRole: adminUser?.role,
+      action: 'CREATE',
+      entityType: 'user',
+      entityId: authData.user.id,
+      description: `Yeni kullanıcı oluşturuldu: ${email}`,
+      newValues: { email, name, role },
+    })
 
     return NextResponse.json({
       user: {

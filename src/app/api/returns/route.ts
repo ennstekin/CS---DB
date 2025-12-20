@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { IkasClient } from "@/lib/ikas/client";
+import { createClient } from "@/lib/supabase/server";
+import { logActivity } from "@/lib/logger";
 
 // Get İkas settings from database
 async function getIkasClient(): Promise<IkasClient | null> {
@@ -249,6 +251,36 @@ export async function POST(request: NextRequest) {
       event_type: "created",
       description: source === "manual" ? "Manuel iade talebi oluşturuldu" : "İade talebi oluşturuldu",
       created_by: "system",
+    });
+
+    // Log activity
+    const authSupabase = await createClient();
+    const { data: { user } } = await authSupabase.auth.getUser();
+    let appUser = null;
+    if (user) {
+      const { data } = await authSupabase
+        .from("app_users")
+        .select("email, role")
+        .eq("id", user.id)
+        .single();
+      appUser = data;
+    }
+
+    await logActivity({
+      userId: user?.id,
+      userEmail: appUser?.email,
+      userRole: appUser?.role,
+      action: "CREATE",
+      entityType: "return",
+      entityId: returnData.id,
+      description: `İade oluşturuldu: ${returnNumber}`,
+      newValues: {
+        returnNumber,
+        reason,
+        totalRefundAmount,
+        source,
+        orderNumber,
+      },
     });
 
     return NextResponse.json({

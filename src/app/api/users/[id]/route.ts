@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { logActivity } from '@/lib/logger'
 
 // PATCH - Update user (Admin only)
 export async function PATCH(
@@ -64,6 +65,24 @@ export async function PATCH(
       return NextResponse.json({ error: updateError.message }, { status: 500 })
     }
 
+    // Log activity
+    const { data: adminUser } = await supabase
+      .from('app_users')
+      .select('email, role')
+      .eq('id', user.id)
+      .single()
+
+    await logActivity({
+      userId: user.id,
+      userEmail: adminUser?.email,
+      userRole: adminUser?.role,
+      action: 'UPDATE',
+      entityType: 'user',
+      entityId: id,
+      description: `Kullanıcı güncellendi: ${updatedUser.email}`,
+      newValues: updateData,
+    })
+
     return NextResponse.json({ user: updatedUser })
   } catch (error) {
     console.error('Error updating user:', error)
@@ -102,12 +121,37 @@ export async function DELETE(
       return NextResponse.json({ error: 'Kendinizi silemezsiniz' }, { status: 400 })
     }
 
+    // Get user info before deletion for logging
+    const { data: targetUser } = await supabase
+      .from('app_users')
+      .select('email, name, role')
+      .eq('id', id)
+      .single()
+
     // Delete auth user (this will cascade delete app_users due to FK constraint)
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(id)
 
     if (deleteError) {
       return NextResponse.json({ error: deleteError.message }, { status: 500 })
     }
+
+    // Log activity
+    const { data: adminUser } = await supabase
+      .from('app_users')
+      .select('email, role')
+      .eq('id', user.id)
+      .single()
+
+    await logActivity({
+      userId: user.id,
+      userEmail: adminUser?.email,
+      userRole: adminUser?.role,
+      action: 'DELETE',
+      entityType: 'user',
+      entityId: id,
+      description: `Kullanıcı silindi: ${targetUser?.email}`,
+      oldValues: targetUser ? { email: targetUser.email, name: targetUser.name, role: targetUser.role } : undefined,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {
