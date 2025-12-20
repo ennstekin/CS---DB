@@ -19,6 +19,7 @@ import {
   DollarSign,
   FileText,
   Loader2,
+  Mail,
 } from "lucide-react";
 
 interface ReturnData {
@@ -72,6 +73,7 @@ const REFUND_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 
 export default function TrackPage() {
   const [returnNumber, setReturnNumber] = useState("");
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [returnData, setReturnData] = useState<ReturnData | null>(null);
@@ -86,13 +88,18 @@ export default function TrackPage() {
       return;
     }
 
+    if (!email.trim()) {
+      setError("Lütfen e-posta adresinizi girin");
+      return;
+    }
+
     setLoading(true);
 
     try {
       const response = await fetch("/api/portal/track", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ returnNumber }),
+        body: JSON.stringify({ returnNumber, email }),
       });
 
       const data = await response.json();
@@ -153,6 +160,25 @@ export default function TrackPage() {
                   disabled={loading}
                   required
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email" className="flex items-center gap-2">
+                  <Mail className="h-4 w-4" />
+                  E-posta Adresi
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="siparis@ornek.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Siparişinizde kullandığınız e-posta adresini girin
+                </p>
               </div>
 
               {error && (

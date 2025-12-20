@@ -13,7 +13,8 @@ interface CacheEntry {
 
 export class OrderService {
   private cache = new Map<string, CacheEntry>();
-  private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
+  private readonly CACHE_TTL = 900000; // 15 minutes in milliseconds
+  private readonly MAX_CACHE_SIZE = 100; // Prevent memory leak
 
   constructor(private ikasClient: IkasClient) {}
 
@@ -39,7 +40,15 @@ export class OrderService {
       // 3. Map to domain entity
       const order = mapIkasOrderToEntity(ikasOrder);
 
-      // 4. Cache it
+      // 4. Cache it (with LRU-like eviction)
+      if (this.cache.size >= this.MAX_CACHE_SIZE) {
+        // Remove oldest entries (first 20%)
+        const entriesToRemove = Math.floor(this.MAX_CACHE_SIZE * 0.2);
+        const keys = Array.from(this.cache.keys()).slice(0, entriesToRemove);
+        keys.forEach(key => this.cache.delete(key));
+        console.log(`🗑️ Evicted ${entriesToRemove} old cache entries`);
+      }
+
       this.cache.set(`order:${orderNumber}`, {
         data: order,
         expiresAt: Date.now() + this.CACHE_TTL

@@ -32,7 +32,8 @@ export async function POST(request: NextRequest) {
         'ai_kb_campaigns',
         'ai_kb_return_policy',
         'ai_kb_general',
-        'ai_kb_store_info'
+        'ai_kb_store_info',
+        'ai_kb_prompt'
       ]);
 
     const settingsMap: Record<string, string> = {};
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest) {
       campaigns: settingsMap.ai_kb_campaigns || '',
       returnPolicy: settingsMap.ai_kb_return_policy || '',
       general: settingsMap.ai_kb_general || '',
+      customPrompt: settingsMap.ai_kb_prompt || '',
     };
 
     // 2. Try to get order data (if order number found)

@@ -137,10 +137,11 @@ export default function DashboardPage() {
         });
       });
 
-      // Sort all by time
+      // Sort all by time (newest first)
       recentActivity.sort((a, b) => {
-        // Simple sort by time string (for display purposes)
-        return 0;
+        const timeA = parseTimeAgo(a.time);
+        const timeB = parseTimeAgo(b.time);
+        return timeA - timeB; // Lower value = more recent
       });
 
       setStats({
@@ -156,6 +157,20 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Parse time ago string back to minutes for sorting
+  const parseTimeAgo = (timeStr: string): number => {
+    if (timeStr.includes("dk önce")) {
+      return parseInt(timeStr) || 0;
+    }
+    if (timeStr.includes("saat önce")) {
+      return (parseInt(timeStr) || 0) * 60;
+    }
+    if (timeStr.includes("gün önce")) {
+      return (parseInt(timeStr) || 0) * 60 * 24;
+    }
+    return 99999; // Very old
   };
 
   const formatTime = (date: Date): string => {

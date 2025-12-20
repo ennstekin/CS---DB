@@ -119,7 +119,10 @@ export class QueueWorker {
    * İkas order fetch job'ını işle
    */
   private async processIkasOrderJob(job: Job): Promise<void> {
-    const { mail_id, from, subject, body } = job.payload;
+    const mail_id = job.payload.mail_id as string | undefined;
+    const from = job.payload.from as string | undefined;
+    const subject = job.payload.subject as string | undefined;
+    const body = job.payload.body as string | undefined;
 
     if (!mail_id) {
       throw new Error('mail_id required in job payload');
@@ -137,13 +140,15 @@ export class QueueWorker {
     if (orderNumber) {
       console.log(`📦 Order number found: ${orderNumber}`);
       orderData = await this.ikasClient.getOrderByNumber(orderNumber);
-    } else {
+    } else if (from) {
       console.log(`📧 No order number, trying email: ${from}`);
       const orders = await this.ikasClient.getOrdersByEmail(from, 3);
       if (orders.length > 0) {
         orderData = orders[0]; // En son sipariş
         console.log(`📦 Found order by email: ${orderData.orderNumber}`);
       }
+    } else {
+      console.log('⚠️ No order number and no email to search');
     }
 
     if (!orderData) {

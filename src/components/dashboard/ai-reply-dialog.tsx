@@ -28,21 +28,31 @@ interface AiReplyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mail: Mail | null;
+  initialText?: string;
+  onTextClear?: () => void;
 }
 
-export function AiReplyDialog({ open, onOpenChange, mail }: AiReplyDialogProps) {
+export function AiReplyDialog({ open, onOpenChange, mail, initialText, onTextClear }: AiReplyDialogProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [aiResponse, setAiResponse] = useState<MailResponseResult | null>(null);
   const [editedResponse, setEditedResponse] = useState("");
   const [isEditing, setIsEditing] = useState(false);
 
-  // Dialog açıldığında otomatik olarak AI yanıtı üret
+  // Dialog açıldığında: manuel metin varsa direkt göster, yoksa AI üret
   useEffect(() => {
-    if (open && mail && !aiResponse && !isGenerating) {
-      handleGenerateReply();
+    if (open && mail) {
+      if (initialText && initialText.trim()) {
+        // Manuel metin geldi, AI üretme
+        setEditedResponse(initialText);
+        setIsEditing(true);
+        setAiResponse({ suggestedResponse: initialText, tone: 'professional', confidence: 1 } as MailResponseResult);
+      } else if (!aiResponse && !isGenerating) {
+        // Manuel metin yok, AI üret
+        handleGenerateReply();
+      }
     }
-  }, [open, mail]);
+  }, [open, mail, initialText]);
 
   // AI yanıt üret
   const handleGenerateReply = async () => {
@@ -150,6 +160,8 @@ export function AiReplyDialog({ open, onOpenChange, mail }: AiReplyDialogProps) 
         setEditedResponse("");
         setIsEditing(false);
       }, 300);
+      // Manuel metin alanını da temizle
+      onTextClear?.();
     }
   };
 

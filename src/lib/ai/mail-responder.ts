@@ -39,6 +39,7 @@ export interface AIKnowledgeBase {
   campaigns?: string;
   returnPolicy?: string;
   general?: string;
+  customPrompt?: string;
 }
 
 /**
@@ -114,31 +115,36 @@ ${sections.join('\n\n')}
         }
       }
 
-      const prompt = `Sen bir e-ticaret müşteri hizmetleri asistanısın. Aşağıdaki müşteri mailini oku ve profesyonel bir yanıt hazırla.
+      // Varsayılan prompt veya özelleştirilmiş prompt
+      const defaultRules = `ÖNEMLİ KURALLAR:
+- SADECE mail metnini yaz, başka hiçbir şey ekleme
+- Açıklama, ton, skor gibi ekstra bilgiler YAZMA
+- "Merhaba" ile başla, "Saygılarımla" veya "İyi günler" ile bitir
+- Samimi, yardımsever ve çözüm odaklı ol
+- 100-200 kelime arası tut
+- Türkçe yaz`;
+
+      const customRules = knowledgeBase?.customPrompt?.trim();
+      const rulesSection = customRules || defaultRules;
+
+      const prompt = `Sen bir e-ticaret müşteri hizmetleri temsilcisisin. Aşağıdaki müşteri mailine gönderilmeye hazır bir yanıt yaz.
 ${knowledgeBaseText}
 
 Müşteri: ${from}
 Konu: ${subject}
-Kategori: ${category || 'Belirsiz'}
 Mail İçeriği:
 ${body}${orderInfoText}
 
-Lütfen şu formatta yanıt ver:
-1. Müşteriye uygun bir mail yanıtı (200-300 kelime)
-2. Ton (professional/friendly/apologetic)
-3. Güven skoru (0-1 arası)
-4. Kısa bir açıklama
-
-${ikasOrder ? 'Sipariş bilgilerini yanıta dahil et. Gerçek sipariş numarasını ve durumunu kullan.' : ''}
-${knowledgeBaseText ? 'Yukarıdaki mağaza bilgi kaynağındaki bilgileri (kargo, kampanya, iade politikası vb.) yanıtında doğru şekilde kullan.' : ''}
-Yanıtın samimi, yardımsever ve çözüm odaklı olsun. Türkçe yaz.`;
+${rulesSection}
+${ikasOrder ? '- Sipariş bilgilerini (numara, durum, kargo) yanıta dahil et' : ''}
+${knowledgeBaseText ? '- Mağaza bilgi kaynağındaki bilgileri (kargo, kampanya, iade politikası) kullan' : ''}`;
 
       const completion = await openai.chat.completions.create({
         model: model,
         messages: [
           {
             role: "system",
-            content: "Sen yardımsever ve profesyonel bir müşteri hizmetleri asistanısın."
+            content: "Sen bir e-ticaret müşteri hizmetleri temsilcisisin. SADECE gönderilmeye hazır mail metni üret. Açıklama, ton, skor veya başka ekstra bilgi EKLEME. Yanıtın direkt mail olarak gönderilebilir olmalı."
           },
           {
             role: "user",
@@ -146,7 +152,7 @@ Yanıtın samimi, yardımsever ve çözüm odaklı olsun. Türkçe yaz.`;
           }
         ],
         temperature: 0.7,
-        max_tokens: 800,
+        max_tokens: 500,
       });
 
       const aiResponse = completion.choices[0]?.message?.content || "";

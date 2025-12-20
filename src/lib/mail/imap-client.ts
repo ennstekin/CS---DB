@@ -1,6 +1,6 @@
 import Imap from "imap";
 import { simpleParser, ParsedMail } from "mailparser";
-import { prisma } from "@/lib/prisma";
+import { supabase } from "@/lib/supabase";
 
 export interface ImapConfig {
   host: string;
@@ -8,6 +8,14 @@ export interface ImapConfig {
   user: string;
   password: string;
   tls: boolean;
+}
+
+export interface MailAttachment {
+  filename: string;
+  contentType: string;
+  contentId?: string;
+  size: number;
+  content: Buffer;
 }
 
 export interface FetchedMail {
@@ -20,6 +28,40 @@ export interface FetchedMail {
   inReplyTo?: string;
   labels?: string[];
   flags?: string[];
+  attachments?: MailAttachment[];
+}
+
+// Convert CID references in HTML to base64 data URLs
+function replaceCidWithBase64(html: string, attachments: MailAttachment[]): string {
+  if (!html || !attachments || attachments.length === 0) {
+    return html;
+  }
+
+  let processedHtml = html;
+
+  for (const attachment of attachments) {
+    if (attachment.contentId) {
+      // Remove angle brackets from contentId if present
+      const cid = attachment.contentId.replace(/^<|>$/g, '');
+
+      // Convert buffer to base64
+      const base64Content = attachment.content.toString('base64');
+      const dataUrl = `data:${attachment.contentType};base64,${base64Content}`;
+
+      // Replace all variations of CID references
+      // cid:xxx, CID:xxx, src="cid:xxx", src='cid:xxx'
+      const cidPatterns = [
+        new RegExp(`cid:${cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'),
+        new RegExp(`CID:${cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'),
+      ];
+
+      for (const pattern of cidPatterns) {
+        processedHtml = processedHtml.replace(pattern, dataUrl);
+      }
+    }
+  }
+
+  return processedHtml;
 }
 
 export class ImapMailClient {
@@ -38,7 +80,9 @@ export class ImapMailClient {
         host: this.config.host,
         port: this.config.port,
         tls: this.config.tls,
-        tlsOptions: { rejectUnauthorized: false },
+        tlsOptions: {
+          rejectUnauthorized: process.env.NODE_ENV === 'production'
+        },
       });
 
       this.imap.once("ready", () => resolve());
@@ -108,6 +152,7 @@ export class ImapMailClient {
           // Get most recent messages by reversing and limiting
           const messageIds = results.reverse().slice(0, limit);
           const fetchedMails: FetchedMail[] = [];
+          const parsePromises: Promise<void>[] = [];
 
           const fetch = this.imap!.fetch(messageIds, {
             bodies: "",
@@ -128,29 +173,55 @@ export class ImapMailClient {
                 buffer = Buffer.concat([buffer, chunk]);
               });
 
-              stream.once("end", async () => {
-                try {
-                  const parsed = await this.parseEmail(buffer);
+              // Create a promise for this message's parsing
+              const parsePromise = new Promise<void>((resolveMsg) => {
+                stream.once("end", async () => {
+                  try {
+                    const parsed = await this.parseEmail(buffer);
 
-                  // Extract flags and labels
-                  const flags = attributes?.flags || [];
-                  const labels = attributes?.['x-gm-labels'] || [];
+                    // Extract flags and labels
+                    const flags = attributes?.flags || [];
+                    const labels = attributes?.['x-gm-labels'] || [];
 
-                  fetchedMails.push({
-                    from: parsed.from?.text || "",
-                    subject: parsed.subject || "",
-                    bodyText: parsed.text || "",
-                    bodyHtml: parsed.html || undefined,
-                    receivedAt: parsed.date || new Date(),
-                    messageId: parsed.messageId,
-                    inReplyTo: parsed.inReplyTo,
-                    labels: Array.isArray(labels) ? labels : [],
-                    flags: Array.isArray(flags) ? flags : [],
-                  });
-                } catch (parseError) {
-                  console.error("Error parsing email:", parseError);
-                }
+                    // Extract attachments (including inline images)
+                    const attachments: MailAttachment[] = [];
+                    if (parsed.attachments && parsed.attachments.length > 0) {
+                      for (const att of parsed.attachments) {
+                        attachments.push({
+                          filename: att.filename || 'unnamed',
+                          contentType: att.contentType || 'application/octet-stream',
+                          contentId: att.contentId,
+                          size: att.size || 0,
+                          content: att.content,
+                        });
+                      }
+                    }
+
+                    // Process HTML to replace CID references with base64 data URLs
+                    let processedHtml = parsed.html || undefined;
+                    if (processedHtml && attachments.length > 0) {
+                      processedHtml = replaceCidWithBase64(processedHtml, attachments);
+                    }
+
+                    fetchedMails.push({
+                      from: parsed.from?.text || "",
+                      subject: parsed.subject || "",
+                      bodyText: parsed.text || "",
+                      bodyHtml: processedHtml,
+                      receivedAt: parsed.date || new Date(),
+                      messageId: parsed.messageId,
+                      inReplyTo: parsed.inReplyTo,
+                      labels: Array.isArray(labels) ? labels : [],
+                      flags: Array.isArray(flags) ? flags : [],
+                      attachments: attachments,
+                    });
+                  } catch (parseError) {
+                    console.error("Error parsing email:", parseError);
+                  }
+                  resolveMsg();
+                });
               });
+              parsePromises.push(parsePromise);
             });
           });
 
@@ -158,7 +229,9 @@ export class ImapMailClient {
             reject(fetchErr);
           });
 
-          fetch.once("end", () => {
+          fetch.once("end", async () => {
+            // Wait for all message parsing to complete before resolving
+            await Promise.all(parsePromises);
             this.imap?.end();
             resolve(fetchedMails);
           });
@@ -289,15 +362,17 @@ export async function fetchAndSaveMails(config: ImapConfig): Promise<number> {
   try {
     const mails = await client.fetchUnreadMails(50);
 
-    // Save to database
+    // Save to database using Supabase
     let savedCount = 0;
     for (const mail of mails) {
       try {
         // Check if mail already exists by messageId
         if (mail.messageId) {
-          const existing = await prisma.mail.findFirst({
-            where: { messageId: mail.messageId },
-          });
+          const { data: existing } = await supabase
+            .from("mails")
+            .select("id")
+            .eq("message_id", mail.messageId)
+            .single();
 
           if (existing) {
             continue; // Skip duplicate
@@ -305,25 +380,27 @@ export async function fetchAndSaveMails(config: ImapConfig): Promise<number> {
         }
 
         // Create mail record
-        await prisma.mail.create({
-          data: {
-            direction: "INBOUND",
-            fromEmail: mail.from,
-            toEmail: config.user,
-            subject: mail.subject,
-            bodyText: mail.bodyText,
-            bodyHtml: mail.bodyHtml,
-            status: "NEW",
-            receivedAt: mail.receivedAt,
-            messageId: mail.messageId,
-            inReplyTo: mail.inReplyTo,
-            isAiAnalyzed: false,
-          },
+        const { error } = await supabase.from("mails").insert({
+          direction: "INBOUND",
+          from_email: mail.from,
+          to_email: config.user,
+          subject: mail.subject,
+          body_text: mail.bodyText,
+          body_html: mail.bodyHtml,
+          status: "NEW",
+          received_at: mail.receivedAt.toISOString(),
+          message_id: mail.messageId,
+          in_reply_to: mail.inReplyTo,
+          is_ai_analyzed: false,
         });
 
-        savedCount++;
+        if (!error) {
+          savedCount++;
+        } else {
+          console.error("Mail kaydetme hatası:", error);
+        }
       } catch (saveError) {
-        console.error("Error saving mail:", saveError);
+        console.error("Mail kaydetme hatası:", saveError);
       }
     }
 

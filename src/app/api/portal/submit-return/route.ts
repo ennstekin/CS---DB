@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getOrderService } from "@/lib/services";
+import { sendReturnStatusNotification, getSmtpConfigFromEnv } from "@/lib/services/notification-service";
 
 // POST - Submit return request from portal
 export async function POST(request: NextRequest) {
@@ -158,6 +159,19 @@ export async function POST(request: NextRequest) {
         is_internal: false,
         user_id: "customer",
       });
+    }
+
+    // Send confirmation email to customer
+    const smtpConfig = getSmtpConfigFromEnv();
+    if (smtpConfig && ikasOrder.customerEmail) {
+      sendReturnStatusNotification(smtpConfig, {
+        to: ikasOrder.customerEmail,
+        customerName: ikasOrder.customerName || 'Değerli Müşterimiz',
+        returnNumber,
+        orderNumber: cleanOrderNumber,
+        status: 'REQUESTED',
+        totalAmount: ikasOrder.totalPrice,
+      }).catch(err => console.error('Failed to send return confirmation:', err));
     }
 
     console.log(`✅ Portal: Return created successfully: ${returnNumber}`);

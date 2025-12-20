@@ -1,20 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { mockMails } from "@/lib/mock-data";
 
-// GET - Fetch all mails from Supabase
+// GET - Fetch mails from Supabase with pagination
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const status = searchParams.get("status");
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100); // Max 100
+    const offset = parseInt(searchParams.get("offset") || "0");
 
-    // Build query
+    // Get total count for pagination
+    let countQuery = supabase
+      .from("mails")
+      .select("*", { count: "exact", head: true });
+
+    if (status && status !== "all") {
+      if (status === "new") {
+        countQuery = countQuery.eq("status", "NEW");
+      } else if (status === "open") {
+        countQuery = countQuery.in("status", ["OPEN", "PENDING"]);
+      } else if (status === "resolved") {
+        countQuery = countQuery.eq("status", "RESOLVED");
+      }
+    }
+
+    const { count: totalCount } = await countQuery;
+
+    // Build paginated query
     let query = supabase
       .from("mails")
       .select("*")
-      .order("received_at", { ascending: false });
+      .order("received_at", { ascending: false })
+      .range(offset, offset + limit - 1);
 
-    // Filter by status
     if (status && status !== "all") {
       if (status === "new") {
         query = query.eq("status", "NEW");
@@ -29,37 +47,19 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
-    // If no mails in DB, return mock data
+    // Return empty array if no mails
     if (!mails || mails.length === 0) {
-      console.log("No mails in database, returning mock data");
-      return NextResponse.json(mockMails.map(mail => ({
-        id: mail.id,
-        fromEmail: mail.from,
-        toEmail: "support@company.com",
-        subject: mail.subject,
-        bodyText: mail.body,
-        status: mail.status,
-        priority: mail.priority,
-        isAiAnalyzed: mail.isAiAnalyzed,
-        aiCategory: mail.aiCategory,
-        aiSummary: mail.aiSummary,
-        suggestedOrderIds: mail.suggestedOrderNumbers || [],
-        matchConfidence: mail.matchConfidence,
-        receivedAt: new Date(mail.receivedAt),
-        createdAt: new Date(mail.receivedAt),
-      })));
+      return NextResponse.json([]);
     }
 
-    // Convert DB format to frontend format
+    // Convert DB format to frontend format with category inference
     const dbMails = mails.map(mail => {
-      // Basit kategori tahmini (eğer yoksa)
       let category = mail.ai_category;
       if (!category) {
         const subject = (mail.subject || "").toLowerCase();
         const body = (mail.body_text || "").toLowerCase();
         const text = subject + " " + body;
 
-        // Önce özel durumları kontrol et (daha spesifik olanlar önce)
         if (text.includes("yanlış") || text.includes("hatalı") || text.includes("farklı")) {
           category = "WRONG_ITEM";
         } else if (text.includes("iade") || text.includes("geri gönder") || text.includes("iade et")) {
@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
         } else if (text.includes("sipariş") || text.includes("kargo") || text.includes("#")) {
           category = "ORDER_INQUIRY";
         } else {
-          category = "ORDER_INQUIRY"; // Varsayılan
+          category = "ORDER_INQUIRY";
         }
       }
 
@@ -85,8 +85,9 @@ export async function GET(request: NextRequest) {
         id: mail.id,
         fromEmail: mail.from_email,
         toEmail: mail.to_email || "support@company.com",
-        subject: mail.subject || "(No Subject)",
+        subject: mail.subject || "(Konu yok)",
         bodyText: mail.body_text || "",
+        bodyHtml: mail.body_html || null,
         status: mail.status,
         priority: mail.priority,
         isAiAnalyzed: mail.is_ai_analyzed || true,
@@ -105,11 +106,25 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Return with pagination info if offset is provided
+    if (searchParams.has("offset")) {
+      return NextResponse.json({
+        mails: dbMails,
+        pagination: {
+          total: totalCount || 0,
+          limit,
+          offset,
+          hasMore: (totalCount || 0) > offset + limit,
+        },
+      });
+    }
+
+    // Legacy: return array directly for backward compatibility
     return NextResponse.json(dbMails);
   } catch (error) {
-    console.error("Error fetching mails:", error);
+    console.error("Mail getirme hatası:", error);
     return NextResponse.json(
-      { error: "Failed to fetch mails" },
+      { error: "Mailler alınamadı" },
       { status: 500 }
     );
   }

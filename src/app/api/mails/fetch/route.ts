@@ -45,8 +45,11 @@ export async function POST() {
     const client = new ImapMailClient(config);
     const mails = await client.fetchRecentMails(50);
 
+    console.log(`📬 IMAP'tan ${mails.length} mail çekildi`);
+
     // Save to Supabase ve queue'ya ekle
     let enqueuedCount = 0;
+    let savedCount = 0;
     for (const mail of mails) {
       // Mail'i kaydet
       const { data: savedMail, error: mailError } = await supabase
@@ -72,6 +75,8 @@ export async function POST() {
         console.error('❌ Failed to save mail:', mailError);
         continue;
       }
+
+      savedCount++;
 
       // Sadece sipariş numarası içeren mailleri queue'ya ekle
       if (savedMail?.id) {
@@ -101,11 +106,23 @@ export async function POST() {
       }
     }
 
+    // Group mails into tickets (link new mails to existing tickets)
+    try {
+      const groupResponse = await fetch(new URL('/api/tickets/group-mails', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'), {
+        method: 'POST',
+      });
+      const groupResult = await groupResponse.json();
+      console.log(`📧 Mails grouped: ${groupResult.grouped} mails, ${groupResult.newTickets || 0} new tickets`);
+    } catch (groupError) {
+      console.error('⚠️ Failed to group mails into tickets:', groupError);
+    }
+
     return NextResponse.json({
       success: true,
       count: mails.length,
+      saved: savedCount,
       enqueued: enqueuedCount,
-      message: `${mails.length} mail çekildi, ${enqueuedCount} İkas sorgusu queue'ya eklendi`,
+      message: `${mails.length} mail çekildi, ${savedCount} kaydedildi, ${enqueuedCount} İkas sorgusu queue'ya eklendi`,
     });
   } catch (error) {
     console.error("Error fetching mails:", error);

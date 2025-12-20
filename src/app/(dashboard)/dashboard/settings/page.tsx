@@ -28,11 +28,15 @@ import {
   Tag,
   FileText,
   Store,
+  Users,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth/context";
+import { UserManagement } from "@/components/dashboard/user-management";
 
 export default function SettingsPage() {
+  const { isAdmin } = useAuth();
   const { toast } = useToast();
   const [showIkasToken, setShowIkasToken] = useState(false);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
@@ -63,6 +67,7 @@ export default function SettingsPage() {
     mail_smtp_user: "",
     mail_smtp_password: "",
     mail_smtp_secure: "false",
+    mail_signature: "",
   });
 
   const [portalSettings, setPortalSettings] = useState({
@@ -76,6 +81,7 @@ export default function SettingsPage() {
     ai_kb_return_policy: "",
     ai_kb_general: "",
     ai_kb_store_info: "",
+    ai_kb_prompt: "",
   });
 
   const [isSavingKnowledge, setIsSavingKnowledge] = useState(false);
@@ -120,6 +126,7 @@ export default function SettingsPage() {
           mail_smtp_user: data.mail_smtp_user || "",
           mail_smtp_password: data.mail_smtp_password || "",
           mail_smtp_secure: data.mail_smtp_secure || "false",
+          mail_signature: data.mail_signature || "",
         });
 
         setPortalSettings({
@@ -133,6 +140,7 @@ export default function SettingsPage() {
           ai_kb_return_policy: data.ai_kb_return_policy || "",
           ai_kb_general: data.ai_kb_general || "",
           ai_kb_store_info: data.ai_kb_store_info || "",
+          ai_kb_prompt: data.ai_kb_prompt || "",
         });
 
         // Check which connections are configured
@@ -317,6 +325,12 @@ export default function SettingsPage() {
               <Settings className="h-4 w-4 mr-2" />
               Genel
             </TabsTrigger>
+            {isAdmin && (
+              <TabsTrigger value="users">
+                <Users className="h-4 w-4 mr-2" />
+                Kullanıcılar
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Bağlantılar Tab */}
@@ -593,6 +607,29 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
+                {/* Mail Signature */}
+                <div className="space-y-4 pt-4 border-t">
+                  <h4 className="font-semibold">Mail İmzası</h4>
+                  <div className="space-y-2">
+                    <Textarea
+                      placeholder="Gönderilen maillerin sonuna eklenecek imza...
+
+Örnek:
+--
+Saygılarımızla,
+Paen Müşteri Hizmetleri
+Tel: 0850 XXX XX XX
+www.paen.com.tr"
+                      value={mailSettings.mail_signature}
+                      onChange={(e) => setMailSettings({ ...mailSettings, mail_signature: e.target.value })}
+                      rows={6}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Bu imza gönderilen tüm maillerin sonuna otomatik olarak eklenir
+                    </p>
+                  </div>
+                </div>
+
                 <div className="flex gap-2">
                   <Button
                     onClick={() => saveSettings("mail", mailSettings)}
@@ -729,6 +766,32 @@ export default function SettingsPage() {
                   />
                 </div>
 
+                {/* AI Prompt */}
+                <div className="space-y-2 pt-4 border-t">
+                  <Label className="flex items-center gap-2">
+                    <Brain className="h-4 w-4" />
+                    AI Sistem Prompt'u (Gelişmiş)
+                  </Label>
+                  <Textarea
+                    placeholder="AI'a nasıl davranması gerektiğini anlatan talimatlar...
+
+Varsayılan prompt boş bırakırsanız kullanılır:
+Sen bir e-ticaret müşteri hizmetleri temsilcisisin.
+SADECE gönderilmeye hazır mail metni üret.
+Açıklama, ton, skor gibi ekstra bilgiler EKLEME.
+Merhaba ile başla, Saygılarımla veya İyi günler ile bitir.
+100-200 kelime arası tut.
+Türkçe yaz."
+                    value={aiKnowledgeBase.ai_kb_prompt}
+                    onChange={(e) => setAiKnowledgeBase({ ...aiKnowledgeBase, ai_kb_prompt: e.target.value })}
+                    rows={8}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    ⚠️ Gelişmiş kullanıcılar için. Boş bırakırsanız varsayılan prompt kullanılır.
+                  </p>
+                </div>
+
                 <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
                     <Brain className="h-4 w-4" />
@@ -859,6 +922,17 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Kullanıcılar Tab (Admin Only) */}
+          {isAdmin && (
+            <TabsContent value="users" className="space-y-4">
+              <Card>
+                <CardContent className="pt-6">
+                  <UserManagement />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </div>

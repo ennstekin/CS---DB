@@ -430,11 +430,13 @@ export class IkasClient {
  */
 export function extractOrderNumber(text: string): string | null {
   // Türkçe sipariş numarası formatları:
-  // #12345, #XXXX, sipariş: 12345, sipariş no: 12345
+  // #12345, sipariş: 12345, sipariş no: 12345, sipariş numaram 12345, siparişim 12345
   const patterns = [
-    /#(\d{4,})/i,                    // #12345
-    /sipariş\s*(?:no|numarası)?:?\s*#?(\d{4,})/i,  // sipariş no: 12345
-    /order\s*(?:no|number)?:?\s*#?(\d{4,})/i,      // order no: 12345
+    /#(\d{4,})/i,                                              // #12345
+    /sipariş\s*(?:no|numarası|numaram|num)?:?\s*#?(\d{4,})/i,  // sipariş no/numarası/numaram: 12345
+    /siparişim\s*:?\s*#?(\d{4,})/i,                            // siparişim 12345
+    /order\s*(?:no|number|id)?:?\s*#?(\d{4,})/i,               // order no/number/id: 12345
+    /(?:no|numara|number|id)\s*:?\s*#?(\d{4,})/i,              // no: 12345, numara: 12345
   ];
 
   for (const pattern of patterns) {

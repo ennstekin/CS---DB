@@ -1,4 +1,4 @@
-// Background Job Queue System
+// Background Job Queue System - Direct SQL Implementation
 import { supabase } from '../supabase';
 
 export type JobType = 'fetch_ikas_order' | 'process_mail' | 'cleanup';
@@ -6,7 +6,7 @@ export type JobType = 'fetch_ikas_order' | 'process_mail' | 'cleanup';
 export interface Job {
   id: string;
   job_type: JobType;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   priority: number;
   attempts: number;
@@ -23,7 +23,7 @@ export interface IkasOrderCache {
   id: string;
   mail_id: string;
   order_number: string;
-  order_data: Record<string, any>;
+  order_data: Record<string, unknown>;
   fetched_at: string;
   expires_at: string;
   created_at: string;
@@ -31,54 +31,89 @@ export interface IkasOrderCache {
 }
 
 /**
- * Enqueue a new background job
+ * Enqueue a new background job (direct SQL)
  */
 export async function enqueueJob(
   jobType: JobType,
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
   priority: number = 0
 ): Promise<string | null> {
   try {
-    const { data, error } = await supabase.rpc('enqueue_job', {
-      p_job_type: jobType,
-      p_payload: payload,
-      p_priority: priority,
-    });
+    const { data, error } = await supabase
+      .from('job_queue')
+      .insert({
+        job_type: jobType,
+        payload,
+        priority,
+        status: 'pending',
+        attempts: 0,
+        max_attempts: 3,
+        scheduled_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
 
     if (error) {
-      console.error('❌ Failed to enqueue job:', error);
+      console.error('❌ İş kuyruğuna eklenemedi:', error);
       return null;
     }
 
-    console.log(`✅ Job enqueued: ${jobType} (ID: ${data})`);
-    return data;
+    console.log(`✅ İş kuyruğa eklendi: ${jobType} (ID: ${data.id})`);
+    return data.id;
   } catch (error) {
-    console.error('❌ Error enqueueing job:', error);
+    console.error('❌ İş kuyruğa eklenirken hata:', error);
     return null;
   }
 }
 
 /**
- * Dequeue next job from queue (atomic operation)
+ * Dequeue next job from queue (with row-level locking)
  */
 export async function dequeueJob(jobTypes?: JobType[]): Promise<Job | null> {
   try {
-    const { data, error } = await supabase.rpc('dequeue_job', {
-      p_job_types: jobTypes || null,
-    });
+    // Find next pending job
+    let query = supabase
+      .from('job_queue')
+      .select('*')
+      .eq('status', 'pending')
+      .lte('scheduled_at', new Date().toISOString())
+      .order('priority', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1);
 
-    if (error) {
-      console.error('❌ Failed to dequeue job:', error);
+    if (jobTypes && jobTypes.length > 0) {
+      query = query.in('job_type', jobTypes);
+    }
+
+    const { data: jobs, error: fetchError } = await query;
+
+    if (fetchError || !jobs || jobs.length === 0) {
       return null;
     }
 
-    if (!data || data.length === 0) {
-      return null;
+    const job = jobs[0];
+
+    // Update job status to processing (optimistic locking)
+    const { data: updatedJob, error: updateError } = await supabase
+      .from('job_queue')
+      .update({
+        status: 'processing',
+        started_at: new Date().toISOString(),
+        attempts: job.attempts + 1,
+      })
+      .eq('id', job.id)
+      .eq('status', 'pending') // Only update if still pending
+      .select()
+      .single();
+
+    if (updateError || !updatedJob) {
+      // Another worker grabbed it, try again
+      return dequeueJob(jobTypes);
     }
 
-    return data[0] as Job;
+    return updatedJob as Job;
   } catch (error) {
-    console.error('❌ Error dequeuing job:', error);
+    console.error('❌ İş alınırken hata:', error);
     return null;
   }
 }
@@ -88,19 +123,23 @@ export async function dequeueJob(jobTypes?: JobType[]): Promise<Job | null> {
  */
 export async function completeJob(jobId: string): Promise<boolean> {
   try {
-    const { error } = await supabase.rpc('complete_job', {
-      p_job_id: jobId,
-    });
+    const { error } = await supabase
+      .from('job_queue')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', jobId);
 
     if (error) {
-      console.error('❌ Failed to complete job:', error);
+      console.error('❌ İş tamamlanamadı:', error);
       return false;
     }
 
-    console.log(`✅ Job completed: ${jobId}`);
+    console.log(`✅ İş tamamlandı: ${jobId}`);
     return true;
   } catch (error) {
-    console.error('❌ Error completing job:', error);
+    console.error('❌ İş tamamlanırken hata:', error);
     return false;
   }
 }
@@ -110,20 +149,39 @@ export async function completeJob(jobId: string): Promise<boolean> {
  */
 export async function failJob(jobId: string, errorMessage: string): Promise<boolean> {
   try {
-    const { error } = await supabase.rpc('fail_job', {
-      p_job_id: jobId,
-      p_error_message: errorMessage,
-    });
+    // Get current job to check attempts
+    const { data: job, error: fetchError } = await supabase
+      .from('job_queue')
+      .select('attempts, max_attempts')
+      .eq('id', jobId)
+      .single();
 
-    if (error) {
-      console.error('❌ Failed to fail job:', error);
+    if (fetchError || !job) {
       return false;
     }
 
-    console.log(`⚠️ Job failed: ${jobId} - ${errorMessage}`);
+    const shouldRetry = job.attempts < job.max_attempts;
+
+    const { error } = await supabase
+      .from('job_queue')
+      .update({
+        status: shouldRetry ? 'pending' : 'failed',
+        error_message: errorMessage,
+        scheduled_at: shouldRetry
+          ? new Date(Date.now() + Math.pow(2, job.attempts) * 1000).toISOString() // Exponential backoff
+          : undefined,
+      })
+      .eq('id', jobId);
+
+    if (error) {
+      console.error('❌ İş başarısız olarak işaretlenemedi:', error);
+      return false;
+    }
+
+    console.log(`⚠️ İş başarısız: ${jobId} - ${errorMessage}${shouldRetry ? ' (yeniden denenecek)' : ''}`);
     return true;
   } catch (error) {
-    console.error('❌ Error failing job:', error);
+    console.error('❌ İş başarısız işaretlenirken hata:', error);
     return false;
   }
 }
@@ -142,17 +200,16 @@ export async function getCachedOrder(mailId: string): Promise<IkasOrderCache | n
 
     if (error) {
       if (error.code === 'PGRST116') {
-        // No rows returned
         return null;
       }
-      console.error('❌ Failed to get cached order:', error);
+      console.error('❌ Cache alınamadı:', error);
       return null;
     }
 
-    console.log(`✅ Cache hit for mail: ${mailId}`);
-    return data;
+    console.log(`✅ Cache hit: ${mailId}`);
+    return data as IkasOrderCache;
   } catch (error) {
-    console.error('❌ Error getting cached order:', error);
+    console.error('❌ Cache alınırken hata:', error);
     return null;
   }
 }
@@ -163,11 +220,11 @@ export async function getCachedOrder(mailId: string): Promise<IkasOrderCache | n
 export async function cacheOrder(
   mailId: string,
   orderNumber: string,
-  orderData: Record<string, any>
+  orderData: Record<string, unknown>
 ): Promise<boolean> {
   try {
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 1); // 1 hour cache
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15); // 15 minutes cache (orders change frequently)
 
     const { error } = await supabase
       .from('ikas_order_cache')
@@ -182,14 +239,14 @@ export async function cacheOrder(
       });
 
     if (error) {
-      console.error('❌ Failed to cache order:', error);
+      console.error('❌ Cache kaydedilemedi:', error);
       return false;
     }
 
-    console.log(`✅ Order cached: ${orderNumber} for mail: ${mailId}`);
+    console.log(`✅ Cache kaydedildi: ${orderNumber} -> mail: ${mailId}`);
     return true;
   } catch (error) {
-    console.error('❌ Error caching order:', error);
+    console.error('❌ Cache kaydedilirken hata:', error);
     return false;
   }
 }
@@ -214,4 +271,33 @@ export async function enqueueIkasOrderFetch(
     },
     priority
   );
+}
+
+/**
+ * Clean up old completed/failed jobs
+ */
+export async function cleanupOldJobs(daysOld: number = 7): Promise<number> {
+  try {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+
+    const { data, error } = await supabase
+      .from('job_queue')
+      .delete()
+      .in('status', ['completed', 'failed'])
+      .lt('created_at', cutoffDate.toISOString())
+      .select('id');
+
+    if (error) {
+      console.error('❌ Eski işler temizlenemedi:', error);
+      return 0;
+    }
+
+    const count = data?.length || 0;
+    console.log(`🗑️ ${count} eski iş temizlendi`);
+    return count;
+  } catch (error) {
+    console.error('❌ Temizlik sırasında hata:', error);
+    return 0;
+  }
 }

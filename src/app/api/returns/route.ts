@@ -89,9 +89,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ returns: data || [], source: "db" });
   } catch (error) {
-    console.error("Error fetching returns:", error);
+    console.error("İade getirme hatası:", error);
     return NextResponse.json(
-      { error: "Failed to fetch returns" },
+      { error: "İadeler alınamadı" },
       { status: 500 }
     );
   }
@@ -119,7 +119,22 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!returnNumber) {
       return NextResponse.json(
-        { error: "Missing return number" },
+        { error: "İade numarası gerekli" },
+        { status: 400 }
+      );
+    }
+
+    // Input validation
+    if (customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+      return NextResponse.json(
+        { error: "Geçersiz e-posta formatı" },
+        { status: 400 }
+      );
+    }
+
+    if (totalRefundAmount && (isNaN(totalRefundAmount) || totalRefundAmount < 0)) {
+      return NextResponse.json(
+        { error: "Geçersiz iade tutarı" },
         { status: 400 }
       );
     }
@@ -191,7 +206,7 @@ export async function POST(request: NextRequest) {
     // Validate we have IDs
     if (!finalOrderId || !finalCustomerId) {
       return NextResponse.json(
-        { error: "Missing order or customer information" },
+        { error: "Sipariş veya müşteri bilgisi eksik" },
         { status: 400 }
       );
     }
@@ -241,9 +256,9 @@ export async function POST(request: NextRequest) {
       return: returnData,
     });
   } catch (error) {
-    console.error("Error creating return:", error);
+    console.error("İade oluşturma hatası:", error);
     return NextResponse.json(
-      { error: "Failed to create return" },
+      { error: "İade oluşturulamadı" },
       { status: 500 }
     );
   }

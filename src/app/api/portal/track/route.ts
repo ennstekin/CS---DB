@@ -1,15 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
-// POST - Track return status by return number
+// POST - Track return status by return number + email verification
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { returnNumber } = body;
+    const { returnNumber, email } = body;
 
     if (!returnNumber) {
       return NextResponse.json(
         { error: "İade numarası gerekli", success: false },
+        { status: 400 }
+      );
+    }
+
+    if (!email) {
+      return NextResponse.json(
+        { error: "E-posta adresi gerekli", success: false },
+        { status: 400 }
+      );
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { error: "Geçersiz e-posta adresi", success: false },
         { status: 400 }
       );
     }
@@ -47,6 +63,19 @@ export async function POST(request: NextRequest) {
 
     if (error || !returnData) {
       console.log(`❌ Portal: Return ${cleanReturnNumber} not found`);
+      return NextResponse.json(
+        { error: "İade talebi bulunamadı", success: false },
+        { status: 404 }
+      );
+    }
+
+    // Verify email ownership - SECURITY CHECK
+    const customerData = returnData.customer as { email?: string } | null;
+    const customerEmail = customerData?.email?.toLowerCase();
+    const providedEmail = email.toLowerCase().trim();
+
+    if (!customerEmail || customerEmail !== providedEmail) {
+      console.log(`❌ Portal: Email mismatch for return ${cleanReturnNumber}`);
       return NextResponse.json(
         { error: "İade talebi bulunamadı", success: false },
         { status: 404 }

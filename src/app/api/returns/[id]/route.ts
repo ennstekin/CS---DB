@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { sendReturnStatusNotification, getSmtpConfigFromEnv } from "@/lib/services/notification-service";
 
 // GET - Get return details
 export async function GET(
@@ -69,6 +70,39 @@ export async function PATCH(
         event_data: { oldStatus: body.oldStatus, newStatus: status },
         created_by: "system", // TODO: Get from auth
       });
+
+      // Send customer notification
+      const smtpConfig = getSmtpConfigFromEnv();
+      if (smtpConfig) {
+        // Get return with customer info for notification
+        const { data: returnWithCustomer } = await supabase
+          .from("returns")
+          .select(`
+            return_number,
+            total_refund_amount,
+            customer:customers(email, first_name, last_name),
+            order:orders(order_number)
+          `)
+          .eq("id", id)
+          .single();
+
+        if (returnWithCustomer) {
+          const customer = returnWithCustomer.customer as { email?: string; first_name?: string; last_name?: string } | null;
+          const order = returnWithCustomer.order as { order_number?: string } | null;
+
+          if (customer?.email) {
+            // Send notification in background (don't await)
+            sendReturnStatusNotification(smtpConfig, {
+              to: customer.email,
+              customerName: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Değerli Müşterimiz',
+              returnNumber: returnWithCustomer.return_number || id,
+              orderNumber: order?.order_number || '',
+              status: status,
+              totalAmount: returnWithCustomer.total_refund_amount,
+            }).catch(err => console.error('Failed to send notification:', err));
+          }
+        }
+      }
     }
 
     return NextResponse.json({

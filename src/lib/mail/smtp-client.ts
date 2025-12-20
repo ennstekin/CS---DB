@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import { prisma } from "@/lib/prisma";
+import { supabase } from "@/lib/supabase";
 
 export interface SmtpConfig {
   host: string;
@@ -68,7 +68,7 @@ export class SmtpMailClient {
       await transporter.verify();
       return true;
     } catch (error) {
-      console.error("SMTP connection test failed:", error);
+      console.error("SMTP bağlantı testi başarısız:", error);
       return false;
     }
   }
@@ -85,39 +85,43 @@ export async function sendMailAndSave(
     // Send mail
     const messageId = await client.sendMail(options);
 
-    // Save to database
-    const mailData: any = {
+    // Save to database using Supabase
+    const mailData = {
       direction: "OUTBOUND",
-      fromEmail: config.user,
-      toEmail: options.to,
+      from_email: config.user,
+      to_email: options.to,
       subject: options.subject,
-      bodyText: options.text,
-      bodyHtml: options.html,
+      body_text: options.text,
+      body_html: options.html,
       status: "RESOLVED",
-      sentAt: new Date(),
-      messageId,
+      sent_at: new Date().toISOString(),
+      message_id: messageId,
+      in_reply_to: originalMailId || null,
     };
 
-    // Link to original mail if this is a reply
-    if (originalMailId) {
-      mailData.inReplyTo = originalMailId;
-    }
+    const { error: insertError } = await supabase
+      .from("mails")
+      .insert(mailData);
 
-    await prisma.mail.create({
-      data: mailData,
-    });
+    if (insertError) {
+      console.error("Mail kaydedilemedi:", insertError);
+    }
 
     // Update original mail status if this is a reply
     if (originalMailId) {
-      await prisma.mail.update({
-        where: { id: originalMailId },
-        data: { status: "RESOLVED" },
-      });
+      const { error: updateError } = await supabase
+        .from("mails")
+        .update({ status: "RESOLVED" })
+        .eq("id", originalMailId);
+
+      if (updateError) {
+        console.error("Orijinal mail güncellenemedi:", updateError);
+      }
     }
 
     return messageId;
   } catch (error) {
-    console.error("Error sending mail:", error);
+    console.error("Mail gönderme hatası:", error);
     throw error;
   }
 }
