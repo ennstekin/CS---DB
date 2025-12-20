@@ -43,41 +43,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   ), [])
 
-  const fetchAppUser = async (userId: string) => {
-    console.log('🔍 Fetching app user for ID:', userId)
+  const fetchAppUser = async () => {
+    console.log('🔍 Fetching app user via API...')
 
-    const { data, error } = await supabase
-      .from('app_users')
-      .select('*')
-      .eq('id', userId)
-      .single()
+    try {
+      const response = await fetch('/api/auth/me')
 
-    if (error) {
-      console.error('❌ Error fetching app user:', error.message, error.code, error.details)
-      setAppUser(null)
-      return
-    }
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('❌ Error fetching app user:', errorData.error)
+        setAppUser(null)
+        return
+      }
 
-    if (data) {
+      const data = await response.json()
       console.log('✅ App user loaded:', data.email, data.role)
+
       setAppUser({
         id: data.id,
         email: data.email,
         name: data.name,
         role: data.role as UserRole,
-        requirePasswordChange: data.require_password_change,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
+        requirePasswordChange: data.requirePasswordChange,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
       })
-    } else {
-      console.log('⚠️ No app user data found')
+    } catch (error) {
+      console.error('❌ Network error fetching app user:', error)
       setAppUser(null)
     }
   }
 
   const refreshUser = async () => {
     if (user?.id) {
-      await fetchAppUser(user.id)
+      await fetchAppUser()
     }
   }
 
@@ -87,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session)
       setUser(session?.user ?? null)
       if (session?.user) {
-        await fetchAppUser(session.user.id)
+        await fetchAppUser()
       }
       setLoading(false)
     })
@@ -100,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null)
 
       if (session?.user) {
-        await fetchAppUser(session.user.id)
+        await fetchAppUser()
       } else {
         setAppUser(null)
       }
