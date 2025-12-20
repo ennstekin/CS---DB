@@ -38,6 +38,7 @@ import {
   Filter,
   Loader2,
   Plus,
+  Trash2,
 } from "lucide-react";
 
 interface TicketItem {
@@ -90,6 +91,11 @@ export default function TicketsPage() {
     priority: "NORMAL",
     description: "",
   });
+
+  // Delete Dialog State
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [ticketToDelete, setTicketToDelete] = useState<TicketItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchTickets();
@@ -179,6 +185,38 @@ export default function TicketsPage() {
       alert("Talep oluşturulurken hata oluştu");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, ticket: TicketItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setTicketToDelete(ticket);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!ticketToDelete) return;
+
+    try {
+      setDeleting(true);
+      const response = await fetch(`/api/tickets/${ticketToDelete.id}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        setTickets(tickets.filter((t) => t.id !== ticketToDelete.id));
+        setDeleteDialogOpen(false);
+        setTicketToDelete(null);
+      } else {
+        const data = await response.json();
+        alert("Silme hatası: " + (data.error || "Bilinmeyen hata"));
+      }
+    } catch (error) {
+      console.error("Error deleting ticket:", error);
+      alert("Talep silinirken hata oluştu");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -502,6 +540,16 @@ export default function TicketsPage() {
                     <div className="text-sm text-muted-foreground w-24 text-right">
                       {formatTime(ticket.lastActivityAt)}
                     </div>
+
+                    {/* Delete Button */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                      onClick={(e) => handleDeleteClick(e, ticket)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </Link>
                 );
               })}
@@ -509,6 +557,40 @@ export default function TicketsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Talep Sil</DialogTitle>
+            <DialogDescription>
+              #{ticketToDelete?.ticketNumber} numaralı talebi silmek istediğinizden emin misiniz?
+              Bu işlem geri alınamaz ve ilişkili mailler talepten ayrılacaktır.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={deleting}
+            >
+              İptal
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Sil
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
