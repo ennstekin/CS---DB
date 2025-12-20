@@ -4,6 +4,7 @@ import { ImapMailClient } from "@/lib/mail/imap-client";
 import { supabase } from "@/lib/supabase";
 import { enqueueIkasOrderFetch } from "@/lib/queue";
 import { extractOrderNumber } from "@/lib/ikas/client";
+import { groupMailsIntoTickets } from "@/lib/mail/group-mails";
 
 export async function POST() {
   try {
@@ -56,6 +57,7 @@ export async function POST() {
         .from("mails")
         .upsert({
           message_id: mail.messageId,
+          direction: "INBOUND", // Gelen mail
           from_email: mail.from,
           to_email: config.user,
           subject: mail.subject,
@@ -109,10 +111,7 @@ export async function POST() {
 
     // Group mails into tickets (link new mails to existing tickets)
     try {
-      const groupResponse = await fetch(new URL('/api/tickets/group-mails', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'), {
-        method: 'POST',
-      });
-      const groupResult = await groupResponse.json();
+      const groupResult = await groupMailsIntoTickets();
       console.log(`📧 Mails grouped: ${groupResult.grouped} mails, ${groupResult.newTickets || 0} new tickets`);
     } catch (groupError) {
       console.error('⚠️ Failed to group mails into tickets:', groupError);
