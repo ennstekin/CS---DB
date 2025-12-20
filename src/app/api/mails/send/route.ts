@@ -50,8 +50,25 @@ export async function POST(request: NextRequest) {
     };
 
     // Get inReplyTo from original mail if this is a reply
-    // Note: Database lookup disabled for now (using file storage)
     let inReplyTo: string | undefined;
+    let originalFromEmail: string | undefined;
+    let effectiveTicketId: string | undefined = ticketId;
+
+    if (originalMailId) {
+      const { data: originalMail } = await supabase
+        .from("mails")
+        .select("message_id, from_email, ticket_id")
+        .eq("id", originalMailId)
+        .single();
+
+      if (originalMail) {
+        inReplyTo = originalMail.message_id;
+        originalFromEmail = originalMail.from_email;
+        if (!effectiveTicketId && originalMail.ticket_id) {
+          effectiveTicketId = originalMail.ticket_id;
+        }
+      }
+    }
 
     // Append signature if configured (escape HTML entities for security)
     const signature = settingsMap.mail_signature || "";
@@ -67,7 +84,7 @@ export async function POST(request: NextRequest) {
       ? `${html}<br><br><pre style="font-family: inherit;">${escapeHtml(signature)}</pre>`
       : html;
 
-    // Send mail (without database save for now)
+    // Send mail
     const client = await import("@/lib/mail/smtp-client").then(m => new m.SmtpMailClient(config));
     const messageId = await client.sendMail({
       to,
@@ -76,6 +93,29 @@ export async function POST(request: NextRequest) {
       html: htmlWithSignature,
       inReplyTo,
     });
+
+    // Save outbound mail to database (for thread tracking)
+    const { data: savedOutboundMail } = await supabase
+      .from("mails")
+      .insert({
+        message_id: messageId,
+        direction: "OUTBOUND",
+        from_email: config.user,
+        to_email: to,
+        subject: subject,
+        body_text: textWithSignature,
+        body_html: htmlWithSignature,
+        in_reply_to: inReplyTo,
+        status: "SENT",
+        ticket_id: effectiveTicketId,
+        sent_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+
+    if (savedOutboundMail) {
+      console.log(`📤 Outbound mail saved: ${savedOutboundMail.id} (messageId: ${messageId})`);
+    }
 
     // Update original mail status to RESOLVED if provided
     if (originalMailId) {
@@ -90,49 +130,24 @@ export async function POST(request: NextRequest) {
       console.log(`✅ Mail ${originalMailId} status updated to RESOLVED`);
     }
 
-    // Update ticket status to WAITING_CUSTOMER if ticketId provided
-    if (ticketId) {
+    // Update ticket status to WAITING_CUSTOMER if we have a ticket
+    if (effectiveTicketId) {
       await supabase
         .from("tickets")
         .update({
           status: "WAITING_CUSTOMER",
           last_activity_at: new Date().toISOString()
         })
-        .eq("id", ticketId);
+        .eq("id", effectiveTicketId);
 
       // Add event to ticket timeline with content
       await supabase.from("ticket_events").insert({
-        ticket_id: ticketId,
+        ticket_id: effectiveTicketId,
         event_type: "reply_sent",
         event_data: { to, subject, message_id: messageId, content: textWithSignature },
       });
 
-      console.log(`✅ Ticket ${ticketId} status updated to WAITING_CUSTOMER`);
-    } else if (originalMailId) {
-      // Try to find ticket from original mail
-      const { data: mailData } = await supabase
-        .from("mails")
-        .select("ticket_id")
-        .eq("id", originalMailId)
-        .single();
-
-      if (mailData?.ticket_id) {
-        await supabase
-          .from("tickets")
-          .update({
-            status: "WAITING_CUSTOMER",
-            last_activity_at: new Date().toISOString()
-          })
-          .eq("id", mailData.ticket_id);
-
-        await supabase.from("ticket_events").insert({
-          ticket_id: mailData.ticket_id,
-          event_type: "reply_sent",
-          event_data: { to, subject, message_id: messageId, content: textWithSignature },
-        });
-
-        console.log(`✅ Ticket ${mailData.ticket_id} (from mail) status updated to WAITING_CUSTOMER`);
-      }
+      console.log(`✅ Ticket ${effectiveTicketId} status updated to WAITING_CUSTOMER`);
     }
 
     return NextResponse.json({

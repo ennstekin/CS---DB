@@ -62,6 +62,7 @@ export async function POST() {
           body_text: mail.bodyText,
           body_html: mail.bodyHtml,
           received_at: mail.receivedAt,
+          in_reply_to: mail.inReplyTo, // Thread takibi için önemli
           labels: mail.labels || [],
           flags: mail.flags || [],
         }, {
