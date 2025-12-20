@@ -546,23 +546,23 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
                       {/* Timeline dot */}
                       <div className={`absolute left-0 top-2 h-4 w-4 rounded-full border-2 ${
-                        item.type === "mail"
+                        item.type === "mail" && item.direction === "outbound"
+                          ? "bg-green-100 border-green-500"
+                          : item.type === "mail"
                           ? "bg-blue-100 border-blue-500"
                           : item.type === "note"
                           ? "bg-yellow-100 border-yellow-500"
-                          : item.eventType === "reply_sent"
-                          ? "bg-green-100 border-green-500"
                           : "bg-gray-100 border-gray-400"
                       }`} />
 
                       {/* Content */}
                       <div className={`rounded-lg border p-4 ${
-                        item.type === "mail"
+                        item.type === "mail" && item.direction === "outbound"
+                          ? "bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800"
+                          : item.type === "mail"
                           ? "bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800"
                           : item.type === "note"
                           ? "bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800"
-                          : item.eventType === "reply_sent"
-                          ? "bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800"
                           : "bg-muted border-border"
                       }`}>
                         {/* Header */}
@@ -570,11 +570,15 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                           <div className="flex items-center gap-2">
                             {item.type === "mail" && (
                               <>
-                                <Mail className="h-4 w-4 text-blue-600" />
+                                {item.direction === "outbound" ? (
+                                  <Send className="h-4 w-4 text-green-600" />
+                                ) : (
+                                  <Mail className="h-4 w-4 text-blue-600" />
+                                )}
                                 <span className="font-medium">
-                                  {item.fromName || item.from || "Müşteri"}
+                                  {item.direction === "outbound" ? "Yanıt gönderildi" : (item.fromName || item.from || "Müşteri")}
                                 </span>
-                                {item.isReplied && (
+                                {item.direction !== "outbound" && item.isReplied && (
                                   <Badge variant="outline" className="text-xs">Yanıtlandı</Badge>
                                 )}
                               </>

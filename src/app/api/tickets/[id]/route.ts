@@ -27,13 +27,16 @@ export async function GET(
           message_id,
           subject,
           from_email,
+          to_email,
           body_text,
           body_html,
+          direction,
           status,
           labels,
           matched_order_number,
           matched_return_id,
-          created_at
+          created_at,
+          sent_at
         ),
         notes:ticket_notes(
           id,
@@ -62,17 +65,19 @@ export async function GET(
 
     // Add mails to timeline
     ticket.mails?.forEach((mail: any) => {
+      const isOutbound = mail.direction === 'OUTBOUND';
       timeline.push({
         id: mail.id,
         type: 'mail',
-        direction: 'inbound', // TODO: track outbound mails
+        direction: isOutbound ? 'outbound' : 'inbound',
         title: mail.subject,
         content: mail.body_text,
         contentHtml: mail.body_html,
-        from: mail.from_email,
-        fromName: mail.from_email?.split('@')[0] || 'Müşteri',
+        from: isOutbound ? mail.from_email : mail.from_email,
+        to: isOutbound ? mail.to_email : undefined,
+        fromName: isOutbound ? 'Destek' : (mail.from_email?.split('@')[0] || 'Müşteri'),
         isReplied: mail.status === 'RESOLVED' || mail.status === 'CLOSED',
-        createdAt: mail.created_at,
+        createdAt: isOutbound ? (mail.sent_at || mail.created_at) : mail.created_at,
       });
     });
 
@@ -88,9 +93,10 @@ export async function GET(
       });
     });
 
-    // Add events to timeline
+    // Add events to timeline (exclude events that are already represented by mails)
     ticket.events?.forEach((event: any) => {
-      if (event.event_type !== 'mail_received' && event.event_type !== 'note_added') {
+      // Skip mail_received (shown as inbound mail), note_added, and reply_sent (shown as outbound mail)
+      if (event.event_type !== 'mail_received' && event.event_type !== 'note_added' && event.event_type !== 'reply_sent') {
         timeline.push({
           id: event.id,
           type: 'event',
