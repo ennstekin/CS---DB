@@ -81,7 +81,8 @@ export class ImapMailClient {
         port: this.config.port,
         tls: this.config.tls,
         tlsOptions: {
-          rejectUnauthorized: process.env.NODE_ENV === 'production'
+          // Self-signed sertifikaları kabul et (mail sunucusu self-signed kullanıyor)
+          rejectUnauthorized: false
         },
       });
 
