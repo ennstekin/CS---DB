@@ -41,6 +41,26 @@ export async function GET(request: NextRequest) {
 
     const { count: totalCount } = await countQuery;
 
+    // Get stats for all statuses (independent of filter)
+    const [openCount, waitingCustomerCount, waitingInternalCount, resolvedCount, closedCount, allCount] = await Promise.all([
+      supabase.from('tickets').select('*', { count: 'exact', head: true }).eq('status', 'OPEN'),
+      supabase.from('tickets').select('*', { count: 'exact', head: true }).eq('status', 'WAITING_CUSTOMER'),
+      supabase.from('tickets').select('*', { count: 'exact', head: true }).eq('status', 'WAITING_INTERNAL'),
+      supabase.from('tickets').select('*', { count: 'exact', head: true }).eq('status', 'RESOLVED'),
+      supabase.from('tickets').select('*', { count: 'exact', head: true }).eq('status', 'CLOSED'),
+      supabase.from('tickets').select('*', { count: 'exact', head: true }),
+    ]);
+
+    const stats = {
+      open: openCount.count || 0,
+      waitingCustomer: waitingCustomerCount.count || 0,
+      waitingInternal: waitingInternalCount.count || 0,
+      waiting: (waitingCustomerCount.count || 0) + (waitingInternalCount.count || 0),
+      resolved: resolvedCount.count || 0,
+      closed: closedCount.count || 0,
+      total: allCount.count || 0,
+    };
+
     // Get paginated data
     let query = supabase
       .from('tickets')
@@ -88,6 +108,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       tickets: transformedTickets,
+      stats,
       pagination: {
         total: totalCount || 0,
         limit,

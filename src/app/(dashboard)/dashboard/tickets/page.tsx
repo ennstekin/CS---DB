@@ -72,9 +72,17 @@ const priorityConfig: Record<string, { label: string; color: string }> = {
   URGENT: { label: "Acil", color: "bg-red-100 text-red-600" },
 };
 
+interface TicketStats {
+  open: number;
+  waiting: number;
+  resolved: number;
+  total: number;
+}
+
 export default function TicketsPage() {
   const router = useRouter();
   const [tickets, setTickets] = useState<TicketItem[]>([]);
+  const [stats, setStats] = useState<TicketStats>({ open: 0, waiting: 0, resolved: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [grouping, setGrouping] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -113,6 +121,9 @@ export default function TicketsPage() {
 
       if (data.tickets) {
         setTickets(data.tickets);
+      }
+      if (data.stats) {
+        setStats(data.stats);
       }
     } catch (error) {
       console.error("Error fetching tickets:", error);
@@ -244,14 +255,6 @@ export default function TicketsPage() {
       ticket.ticketNumber.toString().includes(query)
     );
   });
-
-  // Stats
-  const stats = {
-    open: tickets.filter((t) => t.status === "OPEN").length,
-    waiting: tickets.filter((t) => t.status === "WAITING_CUSTOMER" || t.status === "WAITING_INTERNAL").length,
-    resolved: tickets.filter((t) => t.status === "RESOLVED").length,
-    total: tickets.length,
-  };
 
   return (
     <div className="space-y-6">
