@@ -509,62 +509,51 @@ export default function MailsPage() {
 
   const handleDeleteMail = async () => {
     if (!selectedMail || !confirm('Bu maili silmek istediğinizden emin misiniz?')) return;
+
+    const mailIdToDelete = selectedMail.id;
+    const currentThreadId = selectedThread?.id;
+
     setIsDeletingMail(true);
+
+    // Temporarily disable auto-refresh during delete
+    setAutoRefreshEnabled(false);
+
     try {
-      const response = await fetch(`/api/mails/${selectedMail.id}`, { method: 'DELETE' });
+      const response = await fetch(`/api/mails/${mailIdToDelete}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Mail silinemedi');
 
-      // Update mails state
-      setMails(prev => prev.filter(m => m.id !== selectedMail.id));
+      // Clear selection first
+      setSelectedMail(null);
 
-      // Update threads state - remove the mail from thread and remove thread if empty
-      setThreads(prev => {
-        return prev.map(thread => {
-          // Filter out the deleted mail from thread
-          const updatedMails = thread.mails.filter(m => m.id !== selectedMail.id);
+      // Check if this was the only mail in the thread
+      const currentThread = threads.find(t => t.id === currentThreadId);
+      if (currentThread && currentThread.mails.length <= 1) {
+        setSelectedThread(null);
+      }
 
-          // If thread has no more mails, return null to filter out
-          if (updatedMails.length === 0) {
-            return null;
-          }
+      // Reload from database to ensure consistency
+      await loadMails();
 
-          // Update thread with remaining mails
-          const latestMail = updatedMails[updatedMails.length - 1];
-          return {
-            ...thread,
-            mails: updatedMails,
-            latestMail,
-            mailCount: updatedMails.length,
-            hasUnread: updatedMails.some(m => m.status === 'NEW'),
-            lastActivityAt: new Date(latestMail.receivedAt || latestMail.createdAt),
-          };
-        }).filter(Boolean) as MailThread[];
-      });
-
-      // If we're viewing this thread and it becomes empty, clear selection
-      if (selectedThread) {
-        const remainingMails = selectedThread.mails.filter(m => m.id !== selectedMail.id);
-        if (remainingMails.length === 0) {
-          setSelectedThread(null);
-          setSelectedMail(null);
-        } else {
-          // Update selected thread with remaining mails
-          const latestMail = remainingMails[remainingMails.length - 1];
-          setSelectedThread({
-            ...selectedThread,
-            mails: remainingMails,
-            latestMail,
-            mailCount: remainingMails.length,
+      // Re-select thread if it still exists (and has remaining mails)
+      if (currentThreadId) {
+        // Use setTimeout to wait for state update
+        setTimeout(() => {
+          setThreads(currentThreads => {
+            const stillExistingThread = currentThreads.find(t => t.id === currentThreadId);
+            if (stillExistingThread && stillExistingThread.mails.length > 0) {
+              setSelectedThread(stillExistingThread);
+              setSelectedMail(stillExistingThread.latestMail);
+            }
+            return currentThreads;
           });
-          setSelectedMail(latestMail);
-        }
-      } else {
-        setSelectedMail(null);
+        }, 100);
       }
     } catch (error) {
       alert('Mail silinemedi');
     } finally {
       setIsDeletingMail(false);
+      // Re-enable auto-refresh
+      setAutoRefreshEnabled(true);
     }
   };
 
