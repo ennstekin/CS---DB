@@ -60,7 +60,8 @@ function extractEmail(emailString: string): string {
 }
 
 /**
- * Group mails into threads based on message_id and in_reply_to relationships
+ * Group mails into threads based on message_id, in_reply_to, AND normalized subject
+ * Uses subject-based fallback when in_reply_to chain is broken
  */
 export function groupMailsIntoThreads(mails: ThreadedMail[]): MailThread[] {
   if (!mails || mails.length === 0) return [];
@@ -73,7 +74,7 @@ export function groupMailsIntoThreads(mails: ThreadedMail[]): MailThread[] {
     }
   });
 
-  // Find the root of each mail's thread
+  // Find the root of each mail's thread via in_reply_to
   const mailToRootId = new Map<string, string>();
 
   function findRoot(mail: ThreadedMail): string {
@@ -105,7 +106,7 @@ export function groupMailsIntoThreads(mails: ThreadedMail[]): MailThread[] {
   // Compute root for all mails
   mails.forEach(mail => findRoot(mail));
 
-  // Group mails by their root
+  // Group mails by their root (initial grouping)
   const threadMap = new Map<string, ThreadedMail[]>();
   mails.forEach(mail => {
     const rootId = mailToRootId.get(mail.id)!;
@@ -115,10 +116,54 @@ export function groupMailsIntoThreads(mails: ThreadedMail[]): MailThread[] {
     threadMap.get(rootId)!.push(mail);
   });
 
+  // FALLBACK: Merge threads with same normalized subject
+  // This handles cases where in_reply_to is missing (e.g., our outbound mails)
+  const subjectToThreadRoot = new Map<string, string>();
+  const rootMergeMap = new Map<string, string>(); // maps old root -> new root
+
+  // Sort thread roots by oldest mail date (to pick the true root)
+  const sortedRoots = Array.from(threadMap.keys()).sort((a, b) => {
+    const mailsA = threadMap.get(a)!;
+    const mailsB = threadMap.get(b)!;
+    const oldestA = Math.min(...mailsA.map(m => new Date(m.receivedAt || m.createdAt).getTime()));
+    const oldestB = Math.min(...mailsB.map(m => new Date(m.receivedAt || m.createdAt).getTime()));
+    return oldestA - oldestB;
+  });
+
+  sortedRoots.forEach(rootId => {
+    const threadMails = threadMap.get(rootId)!;
+    // Get normalized subject from the oldest mail in this thread
+    const oldestMail = threadMails.reduce((oldest, mail) => {
+      const dateOldest = new Date(oldest.receivedAt || oldest.createdAt).getTime();
+      const dateMail = new Date(mail.receivedAt || mail.createdAt).getTime();
+      return dateMail < dateOldest ? mail : oldest;
+    });
+    const normalizedSubj = normalizeSubject(oldestMail.subject).toLowerCase();
+
+    if (subjectToThreadRoot.has(normalizedSubj)) {
+      // Merge this thread into existing one
+      const existingRoot = subjectToThreadRoot.get(normalizedSubj)!;
+      rootMergeMap.set(rootId, existingRoot);
+    } else {
+      // This is the first thread with this subject
+      subjectToThreadRoot.set(normalizedSubj, rootId);
+    }
+  });
+
+  // Apply merges
+  const mergedThreadMap = new Map<string, ThreadedMail[]>();
+  threadMap.forEach((threadMails, rootId) => {
+    const finalRoot = rootMergeMap.get(rootId) || rootId;
+    if (!mergedThreadMap.has(finalRoot)) {
+      mergedThreadMap.set(finalRoot, []);
+    }
+    mergedThreadMap.get(finalRoot)!.push(...threadMails);
+  });
+
   // Build thread objects
   const threads: MailThread[] = [];
 
-  threadMap.forEach((threadMails, rootId) => {
+  mergedThreadMap.forEach((threadMails, rootId) => {
     // Sort mails in thread by date (oldest first for display, newest for latest)
     const sortedMails = [...threadMails].sort((a, b) => {
       const dateA = new Date(a.receivedAt || a.createdAt).getTime();
