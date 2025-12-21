@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   Phone,
   Mail,
-  Users,
   RotateCcw,
   Settings,
   Ticket,
@@ -49,12 +48,6 @@ const routes: Route[] = [
     label: "Çağrılar",
     icon: Phone,
     href: "/dashboard/calls",
-  },
-  {
-    label: "Müşteriler",
-    icon: Users,
-    href: "/dashboard/customers",
-    disabled: true,
   },
   {
     label: "İadeler",
