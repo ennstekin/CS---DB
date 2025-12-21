@@ -104,7 +104,7 @@ export function Sidebar() {
     <div className="space-y-4 py-4 flex flex-col h-full bg-secondary">
       <div className="px-3 py-2 flex-1">
         <Link href="/dashboard" className="flex items-center pl-3 mb-10">
-          <img src="/logo.webp" alt="PAEN" className="h-10 w-auto" />
+          <img src="/logo.png" alt="PAEN" className="h-14 w-auto" />
         </Link>
 
         {/* User Info Section */}
