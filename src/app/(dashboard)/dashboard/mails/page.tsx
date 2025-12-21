@@ -72,6 +72,8 @@ import { tr } from "date-fns/locale";
 
 interface DbMail {
   id: string;
+  messageId?: string | null;
+  inReplyTo?: string | null;
   fromEmail: string;
   toEmail: string;
   subject: string;
@@ -79,6 +81,7 @@ interface DbMail {
   bodyHtml?: string;
   status: string;
   priority: string;
+  direction?: string;
   isAiAnalyzed: boolean;
   aiCategory?: string;
   aiSummary?: string;
@@ -93,6 +96,17 @@ interface DbMail {
   isMatchedWithOrder?: boolean;
   matchedReturnId?: string | null;
   matchedReturnNumber?: string | null;
+}
+
+interface MailThread {
+  id: string;
+  subject: string;
+  latestMail: DbMail;
+  mails: DbMail[];
+  mailCount: number;
+  hasUnread: boolean;
+  participants: string[];
+  lastActivityAt: Date;
 }
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
@@ -150,10 +164,12 @@ const getAvatarColor = (email: string): string => {
 
 export default function MailsPage() {
   const router = useRouter();
+  const [threads, setThreads] = useState<MailThread[]>([]);
   const [mails, setMails] = useState<DbMail[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingTicket, setIsCreatingTicket] = useState(false);
   const [isFetchingNewMails, setIsFetchingNewMails] = useState(false);
+  const [selectedThread, setSelectedThread] = useState<MailThread | null>(null);
   const [selectedMail, setSelectedMail] = useState<DbMail | null>(null);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [orderDetailOpen, setOrderDetailOpen] = useState(false);
@@ -181,17 +197,23 @@ export default function MailsPage() {
     new Set(mails.flatMap(mail => mail.labels || []))
   ).filter(label => !commonLabels.includes(label));
 
-  const filteredMails = mails.filter((mail) => {
-    // Status filter
-    if (statusFilter !== "ALL" && mail.status !== statusFilter) return false;
+  // Filter threads based on status, category, and search
+  const filteredThreads = threads.filter((thread) => {
+    const latestMail = thread.latestMail;
 
-    // Category filter
-    if (categoryFilter !== "ALL" && mail.aiCategory !== categoryFilter) return false;
+    // Status filter - check if any mail in thread matches
+    if (statusFilter !== "ALL") {
+      const hasMatchingStatus = thread.mails.some(m => m.status === statusFilter);
+      if (!hasMatchingStatus) return false;
+    }
+
+    // Category filter - check latest mail
+    if (categoryFilter !== "ALL" && latestMail.aiCategory !== categoryFilter) return false;
 
     // Search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      return (
+      return thread.mails.some(mail =>
         mail.fromEmail?.toLowerCase().includes(query) ||
         mail.subject?.toLowerCase().includes(query) ||
         mail.bodyText?.toLowerCase().includes(query)
@@ -205,6 +227,13 @@ export default function MailsPage() {
   useEffect(() => {
     loadMails();
   }, []);
+
+  useEffect(() => {
+    // When a thread is selected, set the latest mail as selected
+    if (selectedThread) {
+      setSelectedMail(selectedThread.latestMail);
+    }
+  }, [selectedThread]);
 
   useEffect(() => {
     if (selectedMail?.matchedOrderNumber) {
@@ -238,12 +267,36 @@ export default function MailsPage() {
   const loadMails = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/mails?limit=100`);
+      // Fetch with thread grouping enabled
+      const response = await fetch(`/api/mails?grouped=true`);
       if (response.ok) {
         const data = await response.json();
-        // Handle both response formats: direct array or { mails: [], pagination: {} }
-        const mailsArray = Array.isArray(data) ? data : (data.mails || []);
-        setMails(mailsArray);
+        if (data.threads) {
+          // Parse dates in threads
+          const parsedThreads = data.threads.map((thread: MailThread) => ({
+            ...thread,
+            lastActivityAt: new Date(thread.lastActivityAt),
+            latestMail: {
+              ...thread.latestMail,
+              receivedAt: thread.latestMail.receivedAt ? new Date(thread.latestMail.receivedAt) : undefined,
+              createdAt: new Date(thread.latestMail.createdAt),
+            },
+            mails: thread.mails.map((mail: DbMail) => ({
+              ...mail,
+              receivedAt: mail.receivedAt ? new Date(mail.receivedAt) : undefined,
+              createdAt: new Date(mail.createdAt),
+            })),
+          }));
+          setThreads(parsedThreads);
+          // Also set mails array for compatibility
+          const allMails = parsedThreads.flatMap((t: MailThread) => t.mails);
+          setMails(allMails);
+        } else {
+          // Fallback to non-threaded response
+          const mailsArray = Array.isArray(data) ? data : (data.mails || []);
+          setMails(mailsArray);
+          setThreads([]);
+        }
       }
     } catch (error) {
       console.error("Error loading mails:", error);
@@ -521,7 +574,7 @@ export default function MailsPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Gelen Kutusu</h1>
             <p className="text-sm text-muted-foreground">
-              {filteredMails.length} mail {searchQuery && `(${mails.length} toplam)`}
+              {filteredThreads.length} konuşma {searchQuery && `(${threads.length} toplam)`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -549,11 +602,11 @@ export default function MailsPage() {
 
         {/* Main Content */}
         <div className="flex-1 flex gap-4 min-h-0">
-          {/* Mail List - Hidden on mobile when mail selected */}
+          {/* Mail List - Hidden on mobile when thread selected */}
           <div className={cn(
             "flex flex-col border rounded-lg bg-card",
             "w-full lg:w-[380px] lg:flex-shrink-0",
-            selectedMail && "hidden lg:flex"
+            selectedThread && "hidden lg:flex"
           )}>
             {/* Search & Filters */}
             <div className="p-3 border-b space-y-2">
@@ -665,34 +718,39 @@ export default function MailsPage() {
               )}
             </div>
 
-            {/* Mail Items */}
+            {/* Thread Items */}
             <div className="flex-1 overflow-y-auto">
               {isLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : filteredMails.length === 0 ? (
+              ) : filteredThreads.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                   <Mail className="h-10 w-10 mb-3 opacity-40" />
                   <p className="text-sm">{searchQuery ? "Sonuç bulunamadı" : "Henüz mail yok"}</p>
                 </div>
               ) : (
-                filteredMails.map((mail) => {
-                  const name = getNameFromEmail(mail.fromEmail);
+                filteredThreads.map((thread) => {
+                  const latestMail = thread.latestMail;
+                  const name = getNameFromEmail(latestMail.fromEmail);
                   const initials = getInitials(name);
-                  const avatarColor = getAvatarColor(mail.fromEmail);
-                  const status = statusConfig[mail.status] || statusConfig.NEW;
-                  const isSelected = selectedMail?.id === mail.id;
-                  const isNew = mail.status === 'NEW';
+                  const avatarColor = getAvatarColor(latestMail.fromEmail);
+                  const status = statusConfig[latestMail.status] || statusConfig.NEW;
+                  const isSelected = selectedThread?.id === thread.id;
+                  const hasUnread = thread.hasUnread;
+                  const mailCount = thread.mailCount;
 
                   return (
                     <div
-                      key={mail.id}
-                      onClick={() => setSelectedMail(mail)}
+                      key={thread.id}
+                      onClick={() => {
+                        setSelectedThread(thread);
+                        setSelectedMail(latestMail);
+                      }}
                       className={cn(
                         "flex gap-3 p-3 cursor-pointer border-b transition-colors",
                         isSelected ? "bg-accent" : "hover:bg-muted/50",
-                        isNew && !isSelected && "bg-blue-50/50 dark:bg-blue-950/20"
+                        hasUnread && !isSelected && "bg-blue-50/50 dark:bg-blue-950/20"
                       )}
                     >
                       <Avatar className={cn("h-10 w-10 flex-shrink-0", avatarColor)}>
@@ -702,31 +760,38 @@ export default function MailsPage() {
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-0.5">
-                          <span className={cn("text-sm truncate", isNew && "font-semibold")}>
+                          <span className={cn("text-sm truncate", hasUnread && "font-semibold")}>
                             {name}
                           </span>
-                          <span className="text-xs text-muted-foreground flex-shrink-0">
-                            {formatMailDate(mail.receivedAt || mail.createdAt)}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {mailCount > 1 && (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-medium">
+                                {mailCount}
+                              </Badge>
+                            )}
+                            <span className="text-xs text-muted-foreground">
+                              {formatMailDate(thread.lastActivityAt)}
+                            </span>
+                          </div>
                         </div>
                         <div className="flex items-center gap-1.5 mb-1">
-                          <h4 className={cn("text-sm truncate", isNew && "font-medium")}>
-                            {mail.subject}
+                          <h4 className={cn("text-sm truncate", hasUnread && "font-medium")}>
+                            {thread.subject}
                           </h4>
-                          {mail.matchedOrderNumber && (
+                          {latestMail.matchedOrderNumber && (
                             <Link2 className="h-3 w-3 text-green-600 flex-shrink-0" />
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground line-clamp-1">
-                          {mail.bodyText?.substring(0, 80)}
+                          {latestMail.bodyText?.substring(0, 80)}
                         </p>
                         <div className="flex items-center gap-1.5 mt-1.5">
                           <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 h-4 border", status.bg, status.color)}>
                             {status.label}
                           </Badge>
-                          {mail.aiCategory && categoryLabels[mail.aiCategory] && (
+                          {latestMail.aiCategory && categoryLabels[latestMail.aiCategory] && (
                             <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
-                              {categoryLabels[mail.aiCategory]}
+                              {categoryLabels[latestMail.aiCategory]}
                             </Badge>
                           )}
                         </div>
@@ -741,9 +806,9 @@ export default function MailsPage() {
           {/* Mail Detail - Show on mobile only when selected */}
           <div className={cn(
             "flex-1 flex flex-col border rounded-lg bg-card min-w-0",
-            !selectedMail && "hidden lg:flex"
+            !selectedThread && "hidden lg:flex"
           )}>
-            {selectedMail ? (
+            {selectedThread && selectedMail ? (
               <>
                 {/* Detail Header */}
                 <div className="p-4 border-b">
@@ -751,7 +816,10 @@ export default function MailsPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setSelectedMail(null)}
+                    onClick={() => {
+                      setSelectedThread(null);
+                      setSelectedMail(null);
+                    }}
                     className="lg:hidden mb-3 -ml-2"
                   >
                     <ChevronRight className="h-4 w-4 mr-1 rotate-180" />
@@ -766,13 +834,20 @@ export default function MailsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <h2 className="text-lg font-semibold leading-tight">{selectedMail.subject}</h2>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-lg font-semibold leading-tight">{selectedThread.subject}</h2>
+                            {selectedThread.mailCount > 1 && (
+                              <Badge variant="secondary" className="text-xs">
+                                {selectedThread.mailCount} mesaj
+                              </Badge>
+                            )}
+                          </div>
                           <div className="flex items-center gap-2 mt-1 text-sm">
                             <span className="font-medium">{getNameFromEmail(selectedMail.fromEmail)}</span>
                             <span className="text-muted-foreground">&lt;{selectedMail.fromEmail.match(/<([^>]+)>/)?.[1] || selectedMail.fromEmail}&gt;</span>
                           </div>
                           <p className="text-xs text-muted-foreground mt-0.5">
-                            {format(new Date(selectedMail.receivedAt || selectedMail.createdAt), "d MMMM yyyy, HH:mm", { locale: tr })}
+                            Son aktivite: {format(new Date(selectedThread.lastActivityAt), "d MMMM yyyy, HH:mm", { locale: tr })}
                           </p>
                         </div>
                         <Badge variant="outline" className={cn("border", statusConfig[selectedMail.status]?.bg, statusConfig[selectedMail.status]?.color)}>
@@ -944,22 +1019,71 @@ export default function MailsPage() {
                   </div>
                 )}
 
-                {/* Mail Body */}
-                <div className="flex-1 overflow-y-auto p-4">
-                  {selectedMail.bodyHtml ? (
-                    <div
-                      className="prose prose-sm max-w-none [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded [&_a]:text-blue-600"
-                      dangerouslySetInnerHTML={{ __html: selectedMail.bodyHtml }}
-                    />
-                  ) : (
-                    <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
-                      {selectedMail.bodyText}
-                    </pre>
-                  )}
+                {/* Thread Messages */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {/* Show all mails in thread */}
+                  {selectedThread.mails.map((mail, index) => {
+                    const isOutbound = mail.direction === 'OUTBOUND';
+                    const mailName = getNameFromEmail(mail.fromEmail);
+                    const mailDate = mail.receivedAt || mail.createdAt;
+
+                    return (
+                      <div
+                        key={mail.id}
+                        className={cn(
+                          "rounded-lg border p-4",
+                          isOutbound
+                            ? "bg-green-50/50 border-green-200 dark:bg-green-950/20 dark:border-green-800"
+                            : "bg-background"
+                        )}
+                      >
+                        {/* Mail Header */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Avatar className={cn("h-8 w-8", getAvatarColor(mail.fromEmail))}>
+                              <AvatarFallback className="text-white text-xs">
+                                {getInitials(mailName)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium">{mailName}</span>
+                                {isOutbound && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-green-100 text-green-700 border-green-300">
+                                    Giden
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {format(new Date(mailDate), "d MMM yyyy, HH:mm", { locale: tr })}
+                              </p>
+                            </div>
+                          </div>
+                          {index === selectedThread.mails.length - 1 && !isOutbound && (
+                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                              Son mesaj
+                            </Badge>
+                          )}
+                        </div>
+
+                        {/* Mail Content */}
+                        {mail.bodyHtml ? (
+                          <div
+                            className="prose prose-sm max-w-none [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded [&_a]:text-blue-600"
+                            dangerouslySetInnerHTML={{ __html: mail.bodyHtml }}
+                          />
+                        ) : (
+                          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
+                            {mail.bodyText}
+                          </pre>
+                        )}
+                      </div>
+                    );
+                  })}
 
                   {/* AI Reply Section */}
                   {(aiSuggestedReply || isGeneratingReply) && (
-                    <Card className="mt-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 border-blue-200">
+                    <Card className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 border-blue-200">
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
@@ -1003,8 +1127,8 @@ export default function MailsPage() {
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
                 <Mail className="h-16 w-16 mb-4 opacity-20" />
-                <p className="text-lg font-medium">Mail seçin</p>
-                <p className="text-sm">Detaylarını görmek için sol taraftan bir mail seçin</p>
+                <p className="text-lg font-medium">Konuşma seçin</p>
+                <p className="text-sm">Detaylarını görmek için sol taraftan bir konuşma seçin</p>
               </div>
             )}
           </div>
