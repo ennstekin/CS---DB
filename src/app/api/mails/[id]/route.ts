@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
-// DELETE - Delete a mail
+// DELETE - Soft delete a mail (set deleted_at timestamp)
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -9,16 +9,14 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    // First unlink from ticket if any
-    await supabase
-      .from("mails")
-      .update({ ticket_id: null })
-      .eq("id", id);
-
-    // Delete the mail
+    // Soft delete - set deleted_at timestamp instead of hard delete
+    // This prevents IMAP fetch from re-importing the deleted mail
     const { error } = await supabase
       .from("mails")
-      .delete()
+      .update({
+        deleted_at: new Date().toISOString(),
+        ticket_id: null // Unlink from ticket
+      })
       .eq("id", id);
 
     if (error) {

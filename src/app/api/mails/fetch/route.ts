@@ -51,8 +51,24 @@ export async function POST() {
     // Save to Supabase ve queue'ya ekle
     let enqueuedCount = 0;
     let savedCount = 0;
+    let skippedCount = 0;
+
     for (const mail of mails) {
-      // Mail'i kaydet
+      // Check if this mail was previously deleted (soft delete)
+      // If deleted_at is set, skip this mail - don't re-import it
+      const { data: existingMail } = await supabase
+        .from("mails")
+        .select("id, deleted_at")
+        .eq("message_id", mail.messageId)
+        .single();
+
+      if (existingMail?.deleted_at) {
+        // Mail was soft-deleted, skip it
+        skippedCount++;
+        continue;
+      }
+
+      // Mail'i kaydet (insert or update if not deleted)
       const { data: savedMail, error: mailError } = await supabase
         .from("mails")
         .upsert({
@@ -121,8 +137,9 @@ export async function POST() {
       success: true,
       count: mails.length,
       saved: savedCount,
+      skipped: skippedCount,
       enqueued: enqueuedCount,
-      message: `${mails.length} mail çekildi, ${savedCount} kaydedildi, ${enqueuedCount} İkas sorgusu queue'ya eklendi`,
+      message: `${mails.length} mail çekildi, ${savedCount} kaydedildi, ${skippedCount} atlandı (silinmiş), ${enqueuedCount} İkas sorgusu queue'ya eklendi`,
     });
   } catch (error) {
     console.error("Error fetching mails:", error);

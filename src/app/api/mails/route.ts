@@ -15,7 +15,8 @@ export async function GET(request: NextRequest) {
     // Get total count for pagination
     let countQuery = supabase
       .from("mails")
-      .select("*", { count: "exact", head: true });
+      .select("*", { count: "exact", head: true })
+      .is("deleted_at", null); // Exclude soft-deleted mails
 
     // Filter by direction (default: INBOUND for inbox)
     if (direction !== "all") {
@@ -38,6 +39,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from("mails")
       .select("*, message_id, in_reply_to, direction")
+      .is("deleted_at", null) // Exclude soft-deleted mails
       .order("received_at", { ascending: false });
 
     // When grouping threads, fetch all directions to build complete threads
