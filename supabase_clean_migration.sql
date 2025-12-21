@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS calls (
   twilio_call_sid TEXT UNIQUE,
   twilio_status TEXT,
 
+  verimor_call_id TEXT UNIQUE,
+
   is_matched_with_order BOOLEAN DEFAULT false,
   match_confidence REAL,
 

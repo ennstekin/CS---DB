@@ -15,7 +15,9 @@ import {
   Search,
   Filter,
   PlayCircle,
-  FileText
+  FileText,
+  Download,
+  Loader2
 } from "lucide-react";
 import {
   Select,
@@ -128,6 +130,33 @@ export default function CallsPage() {
   const [selectedCall, setSelectedCall] = useState<typeof mockCalls[0] | null>(null);
   const [directionFilter, setDirectionFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSyncVerimorCalls = async () => {
+    setIsSyncing(true);
+    try {
+      const response = await fetch("/api/verimor/sync-calls?days=30", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        alert(`Hata: ${error.error}`);
+        return;
+      }
+
+      const result = await response.json();
+      alert(`✅ ${result.stats.new} yeni çağrı eklendi, ${result.stats.updated} çağrı güncellendi!`);
+
+      // Sayfayı yenile
+      window.location.reload();
+    } catch (error) {
+      console.error("Sync error:", error);
+      alert("Çağrılar senkronize edilemedi");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const filteredCalls = mockCalls.filter(call => {
     const matchesDirection = directionFilter === "all" || call.direction === directionFilter;
@@ -180,10 +209,29 @@ export default function CallsPage() {
       <div className="flex-1 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-3xl font-bold tracking-tight">Çağrılar</h2>
-          <Button>
-            <PhoneOutgoing className="h-4 w-4 mr-2" />
-            Yeni Çağrı
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={handleSyncVerimorCalls}
+              disabled={isSyncing}
+            >
+              {isSyncing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Çekiliyor...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4 mr-2" />
+                  Verimor'dan Çek
+                </>
+              )}
+            </Button>
+            <Button>
+              <PhoneOutgoing className="h-4 w-4 mr-2" />
+              Yeni Çağrı
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}

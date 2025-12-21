@@ -184,6 +184,9 @@ model Call {
   twilioCallSid   String?    @unique
   twilioStatus    String?
 
+  // Verimor Integration
+  verimorCallId   String?    @unique
+
   // Eşleştirme
   isMatchedWithOrder Boolean  @default(false)
   matchConfidence    Float?   // 0-1 arası AI güven skoru
