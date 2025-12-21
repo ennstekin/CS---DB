@@ -6,6 +6,7 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const status = searchParams.get("status");
+    const direction = searchParams.get("direction") || "INBOUND"; // Default: only show inbound mails
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100); // Max 100
     const offset = parseInt(searchParams.get("offset") || "0");
 
@@ -13,6 +14,11 @@ export async function GET(request: NextRequest) {
     let countQuery = supabase
       .from("mails")
       .select("*", { count: "exact", head: true });
+
+    // Filter by direction (default: INBOUND for inbox)
+    if (direction !== "all") {
+      countQuery = countQuery.eq("direction", direction);
+    }
 
     if (status && status !== "all") {
       if (status === "new") {
@@ -32,6 +38,11 @@ export async function GET(request: NextRequest) {
       .select("*")
       .order("received_at", { ascending: false })
       .range(offset, offset + limit - 1);
+
+    // Filter by direction (default: INBOUND for inbox)
+    if (direction !== "all") {
+      query = query.eq("direction", direction);
+    }
 
     if (status && status !== "all") {
       if (status === "new") {
