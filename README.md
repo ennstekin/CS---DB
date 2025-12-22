@@ -1,4 +1,4 @@
-# Nagoya - Smart Customer Service Dashboard
+# Smart CS Dashboard
 
 <p align="center">
   <strong>E-ticaret Müşteri Hizmetleri Yönetim Paneli</strong>
