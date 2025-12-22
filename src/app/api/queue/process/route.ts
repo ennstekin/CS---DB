@@ -6,25 +6,17 @@ const QUEUE_SECRET = process.env.QUEUE_SECRET;
 
 /**
  * Validate queue request authentication
- * Supports both Authorization header and query parameter
+ * Only supports Authorization header (Bearer token)
+ * Query parameter removed for security - secrets in URLs are logged in access logs
  */
 function validateQueueAuth(request: NextRequest): boolean {
-  // Check Authorization header first
   const authHeader = request.headers.get('Authorization');
-  if (authHeader) {
-    const [scheme, token] = authHeader.split(' ');
-    if (scheme === 'Bearer' && token === QUEUE_SECRET) {
-      return true;
-    }
+  if (!authHeader) {
+    return false;
   }
 
-  // Check query parameter as fallback (for cron services that don't support headers)
-  const secretParam = request.nextUrl.searchParams.get('secret');
-  if (secretParam === QUEUE_SECRET) {
-    return true;
-  }
-
-  return false;
+  const [scheme, token] = authHeader.split(' ');
+  return scheme === 'Bearer' && token === QUEUE_SECRET;
 }
 
 /**
@@ -39,7 +31,6 @@ function validateQueueAuth(request: NextRequest): boolean {
  *
  * Authentication:
  * - Authorization: Bearer <QUEUE_SECRET>
- * - veya ?secret=<QUEUE_SECRET> query parameter
  */
 export async function POST(request: NextRequest) {
   // Validate authentication

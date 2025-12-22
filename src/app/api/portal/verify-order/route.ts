@@ -6,7 +6,7 @@ import { checkRateLimit, getClientIP, RateLimitPresets } from "@/lib/rate-limit"
 export async function POST(request: NextRequest) {
   // Rate limiting to prevent brute force attacks
   const clientIP = getClientIP(request);
-  const rateLimitResult = checkRateLimit(`portal-verify:${clientIP}`, RateLimitPresets.auth);
+  const rateLimitResult = await checkRateLimit(`portal-verify:${clientIP}`, RateLimitPresets.auth);
 
   if (!rateLimitResult.success) {
     return NextResponse.json(

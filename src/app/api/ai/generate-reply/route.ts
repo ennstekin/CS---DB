@@ -34,8 +34,6 @@ export async function POST(request: NextRequest) {
 
     console.log("🔍 Settings fetched:", {
       hasApiKey: !!settingsMap.openai_api_key,
-      apiKeyLength: settingsMap.openai_api_key?.length || 0,
-      apiKeyPrefix: settingsMap.openai_api_key?.substring(0, 10) || 'none',
       model: settingsMap.openai_model || "not set"
     });
 
@@ -44,9 +42,7 @@ export async function POST(request: NextRequest) {
     if (settingsMap.openai_api_key) {
       // Boşlukları, satır sonlarını ve diğer whitespace'leri temizle
       cleanApiKey = settingsMap.openai_api_key.trim().replace(/\s+/g, '');
-      console.log("✅ API key found and cleaned");
-      console.log("Key length:", cleanApiKey.length, "chars");
-      console.log("Key prefix:", cleanApiKey.substring(0, 10));
+      console.log("✅ API key configured");
     } else {
       console.log("❌ No API key found in settings");
     }
