@@ -146,19 +146,37 @@ export function useAuth() {
   return context
 }
 
+// Loading skeleton for RoleGuard
+function RoleGuardSkeleton() {
+  return (
+    <div className="animate-pulse">
+      <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
+      <div className="h-4 bg-muted rounded w-1/2"></div>
+    </div>
+  )
+}
+
 // Helper component for role-based rendering
 export function RoleGuard({
   children,
   allowedRoles,
   fallback = null,
+  showLoading = true,
+  loadingComponent,
 }: {
   children: ReactNode
   allowedRoles: UserRole[]
   fallback?: ReactNode
+  showLoading?: boolean
+  loadingComponent?: ReactNode
 }) {
   const { appUser, loading } = useAuth()
 
-  if (loading) return null
+  if (loading) {
+    if (!showLoading) return null
+    return <>{loadingComponent || <RoleGuardSkeleton />}</>
+  }
+
   if (!appUser || !allowedRoles.includes(appUser.role)) return <>{fallback}</>
 
   return <>{children}</>

@@ -236,6 +236,8 @@ model Mail {
   assignedToId    String?
   assignedTo      User?      @relation("AssignedMails", fields: [assignedToId], references: [id])
 
+  ticketId        String?    // Link to ticket for grouping
+
   // Mail Bilgileri
   direction       MailDirection
   fromEmail       String
@@ -257,6 +259,8 @@ model Mail {
   suggestedOrderIds String[] // AI'ın önerdiği sipariş ID'leri
   isMatchedWithOrder Boolean @default(false)
   matchConfidence    Float?
+  matchedOrderNumber String?  // Matched order number
+  matchedReturnId    String?  // Matched return ID
 
   // Mail Metadata
   messageId       String?    @unique
@@ -265,6 +269,9 @@ model Mail {
   attachments     Json?      // Attachment metadata array
   labels          String[]   // Gmail labels / IMAP folders
   flags           String[]   // IMAP flags (SEEN, FLAGGED, etc.)
+
+  // Soft delete
+  deletedAt       DateTime?
 
   receivedAt      DateTime?
   sentAt          DateTime?
@@ -280,6 +287,9 @@ model Mail {
   @@index([fromEmail])
   @@index([status])
   @@index([receivedAt])
+  @@index([ticketId])
+  @@index([deletedAt])
+  @@index([assignedToId])
 }
 
 enum MailDirection {
@@ -468,4 +478,154 @@ model Setting {
 
   @@map("settings")
   @@index([key])
+}
+
+// ==================== APP USERS (SUPABASE AUTH) ====================
+
+model AppUser {
+  id                    String   @id  // Matches Supabase Auth user.id
+  email                 String   @unique
+  name                  String
+  role                  UserRole @default(AGENT)
+  requirePasswordChange Boolean  @default(true)
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("app_users")
+}
+
+// ==================== TICKETS ====================
+
+model Ticket {
+  id              String        @id @default(cuid())
+  ticketNumber    String        @unique @default(cuid())
+
+  subject         String
+  customerEmail   String
+  customerName    String?
+
+  orderNumber     String?       // Linked order number
+  returnId        String?       // Linked return ID
+
+  assignedTo      String?       // User ID
+  status          TicketStatus  @default(OPEN)
+  priority        TicketPriority @default(NORMAL)
+
+  tags            String[]      // Auto-detected tags
+
+  lastActivityAt  DateTime      @default(now())
+  closedAt        DateTime?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  events          TicketEvent[]
+  notes           TicketNote[]
+
+  @@map("tickets")
+  @@index([customerEmail])
+  @@index([status])
+  @@index([lastActivityAt])
+  @@index([assignedTo])
+}
+
+model TicketEvent {
+  id          String   @id @default(cuid())
+  ticketId    String
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  eventType   String   // ticket_created, mail_received, reply_sent, status_changed, etc.
+  eventData   Json?    // Additional event metadata
+
+  createdAt   DateTime @default(now())
+
+  @@map("ticket_events")
+  @@index([ticketId])
+  @@index([createdAt])
+}
+
+model TicketNote {
+  id          String   @id @default(cuid())
+  ticketId    String
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  author      String   // User ID or email
+  content     String   @db.Text
+  isInternal  Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("ticket_notes")
+  @@index([ticketId])
+}
+
+enum TicketStatus {
+  OPEN
+  WAITING_CUSTOMER
+  WAITING_INTERNAL
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// ==================== JOB QUEUE ====================
+
+model JobQueue {
+  id            String     @id @default(cuid())
+
+  jobType       String     // FETCH_IKAS_ORDER, SYNC_RETURNS, etc.
+  payload       Json       // Job-specific data
+
+  status        JobStatus  @default(PENDING)
+  priority      Int        @default(5)  // 1=highest, 10=lowest
+
+  attempts      Int        @default(0)
+  maxAttempts   Int        @default(3)
+  errorMessage  String?    @db.Text
+
+  scheduledAt   DateTime   @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@map("job_queue")
+  @@index([status])
+  @@index([priority])
+  @@index([scheduledAt])
+  @@index([jobType])
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ==================== IKAS ORDER CACHE ====================
+
+model IkasOrderCache {
+  id          String   @id @default(cuid())
+  mailId      String?  // Linked mail ID
+  orderNumber String   @unique
+
+  orderData   Json     // Cached order data from İkas
+
+  fetchedAt   DateTime @default(now())
+  expiresAt   DateTime // Cache expiry time
+
+  @@map("ikas_order_cache")
+  @@index([orderNumber])
+  @@index([expiresAt])
 }

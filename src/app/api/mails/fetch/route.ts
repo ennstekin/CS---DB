@@ -48,82 +48,142 @@ export async function POST() {
 
     console.log(`📬 IMAP'tan ${mails.length} mail çekildi`);
 
-    // Save to Supabase ve queue'ya ekle
-    let enqueuedCount = 0;
-    let savedCount = 0;
-    let skippedCount = 0;
+    if (mails.length === 0) {
+      return NextResponse.json({
+        success: true,
+        count: 0,
+        saved: 0,
+        skipped: 0,
+        enqueued: 0,
+        message: "IMAP'tan mail bulunamadı",
+      });
+    }
 
-    for (const mail of mails) {
-      // Check if this mail was previously deleted (soft delete)
-      // If deleted_at is set, skip this mail - don't re-import it
-      const { data: existingMail } = await supabase
-        .from("mails")
-        .select("id, deleted_at")
-        .eq("message_id", mail.messageId)
-        .single();
+    // OPTIMIZATION: Batch fetch existing mails to check for soft-deleted ones
+    // Filter out mails without messageId
+    const validMails = mails.filter(m => m.messageId);
+    const messageIds = validMails.map(m => m.messageId as string);
 
-      if (existingMail?.deleted_at) {
+    const { data: existingMails } = await supabase
+      .from("mails")
+      .select("id, message_id, deleted_at")
+      .in("message_id", messageIds);
+
+    // Create lookup maps
+    const existingMailsMap = new Map<string, { id: string; deleted_at: string | null }>();
+    existingMails?.forEach(m => {
+      existingMailsMap.set(m.message_id, { id: m.id, deleted_at: m.deleted_at });
+    });
+
+    // Separate mails into categories
+    const mailsToUpsert: typeof validMails = [];
+    const skippedMessageIds: string[] = [];
+
+    for (const mail of validMails) {
+      const messageId = mail.messageId as string;
+      const existing = existingMailsMap.get(messageId);
+      if (existing?.deleted_at) {
         // Mail was soft-deleted, skip it
-        skippedCount++;
-        continue;
-      }
-
-      // Mail'i kaydet (insert or update if not deleted)
-      const { data: savedMail, error: mailError } = await supabase
-        .from("mails")
-        .upsert({
-          message_id: mail.messageId,
-          direction: "INBOUND", // Gelen mail
-          from_email: mail.from,
-          to_email: config.user,
-          subject: mail.subject,
-          body_text: mail.bodyText,
-          body_html: mail.bodyHtml,
-          received_at: mail.receivedAt,
-          in_reply_to: mail.inReplyTo, // Thread takibi için önemli
-          labels: mail.labels || [],
-          flags: mail.flags || [],
-        }, {
-          onConflict: "message_id",
-          ignoreDuplicates: false
-        })
-        .select('id')
-        .single();
-
-      if (mailError) {
-        console.error('❌ Failed to save mail:', mailError);
-        continue;
-      }
-
-      savedCount++;
-
-      // Sadece sipariş numarası içeren mailleri queue'ya ekle
-      if (savedMail?.id) {
-        const fullText = `${mail.subject} ${mail.bodyText || mail.bodyHtml || ''}`;
-        const orderNumber = extractOrderNumber(fullText);
-
-        // Sipariş numarası varsa veya mail konusu sipariş/kargo ile ilgiliyse queue'ya ekle
-        const isOrderRelated = orderNumber ||
-                               /sipariş|order|kargo|cargo|takip|tracking/i.test(fullText);
-
-        if (isOrderRelated) {
-          const jobId = await enqueueIkasOrderFetch(
-            savedMail.id,
-            mail.from,
-            mail.subject,
-            mail.bodyText || mail.bodyHtml || '',
-            5 // priority: 5 (normal)
-          );
-
-          if (jobId) {
-            enqueuedCount++;
-            console.log(`✅ İkas fetch job enqueued for mail: ${savedMail.id} (order: ${orderNumber || 'keyword match'})`);
-          }
-        } else {
-          console.log(`⏭️ Skipping İkas fetch for mail: ${savedMail.id} (no order reference)`);
-        }
+        skippedMessageIds.push(messageId);
+      } else {
+        mailsToUpsert.push(mail);
       }
     }
+
+    const skippedCount = skippedMessageIds.length;
+    console.log(`⏭️ ${skippedCount} mail atlandı (silinmiş)`);
+
+    if (mailsToUpsert.length === 0) {
+      return NextResponse.json({
+        success: true,
+        count: mails.length,
+        saved: 0,
+        skipped: skippedCount,
+        enqueued: 0,
+        message: `${mails.length} mail çekildi, ${skippedCount} atlandı (silinmiş)`,
+      });
+    }
+
+    // OPTIMIZATION: Batch upsert mails
+    const mailRecords = mailsToUpsert.map(mail => ({
+      message_id: mail.messageId,
+      direction: "INBOUND" as const,
+      from_email: mail.from,
+      to_email: config.user,
+      subject: mail.subject,
+      body_text: mail.bodyText,
+      body_html: mail.bodyHtml,
+      received_at: mail.receivedAt,
+      in_reply_to: mail.inReplyTo,
+      labels: mail.labels || [],
+      flags: mail.flags || [],
+    }));
+
+    const { data: savedMails, error: upsertError } = await supabase
+      .from("mails")
+      .upsert(mailRecords, {
+        onConflict: "message_id",
+        ignoreDuplicates: false
+      })
+      .select('id, message_id');
+
+    if (upsertError) {
+      console.error('❌ Batch mail upsert failed:', upsertError);
+      return NextResponse.json(
+        { error: "Mail kaydetme başarısız: " + upsertError.message },
+        { status: 500 }
+      );
+    }
+
+    const savedCount = savedMails?.length || 0;
+    console.log(`✅ ${savedCount} mail kaydedildi`);
+
+    // Create a map of message_id -> saved mail id
+    const savedMailsMap = new Map<string, string>();
+    savedMails?.forEach(m => {
+      savedMailsMap.set(m.message_id, m.id);
+    });
+
+    // OPTIMIZATION: Batch enqueue order-related mails
+    let enqueuedCount = 0;
+    const orderRelatedMails: { mailId: string; from: string; subject: string; body: string }[] = [];
+
+    for (const mail of mailsToUpsert) {
+      const messageId = mail.messageId as string;
+      const savedMailId = savedMailsMap.get(messageId);
+      if (!savedMailId) continue;
+
+      const fullText = `${mail.subject} ${mail.bodyText || mail.bodyHtml || ''}`;
+      const orderNumber = extractOrderNumber(fullText);
+      const isOrderRelated = orderNumber ||
+                             /sipariş|order|kargo|cargo|takip|tracking/i.test(fullText);
+
+      if (isOrderRelated) {
+        orderRelatedMails.push({
+          mailId: savedMailId,
+          from: mail.from,
+          subject: mail.subject,
+          body: mail.bodyText || mail.bodyHtml || '',
+        });
+      }
+    }
+
+    // Enqueue order-related mails (these are still individual calls but fewer)
+    for (const mail of orderRelatedMails) {
+      const jobId = await enqueueIkasOrderFetch(
+        mail.mailId,
+        mail.from,
+        mail.subject,
+        mail.body,
+        5
+      );
+
+      if (jobId) {
+        enqueuedCount++;
+      }
+    }
+
+    console.log(`📬 ${enqueuedCount} İkas fetch job enqueued`);
 
     // Group mails into tickets (link new mails to existing tickets)
     try {

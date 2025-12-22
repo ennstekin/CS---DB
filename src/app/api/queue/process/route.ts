@@ -1,6 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runWorker } from '@/lib/queue/worker';
 
+// Queue secret for authentication (set in environment variables)
+const QUEUE_SECRET = process.env.QUEUE_SECRET;
+
+/**
+ * Validate queue request authentication
+ * Supports both Authorization header and query parameter
+ */
+function validateQueueAuth(request: NextRequest): boolean {
+  // Check Authorization header first
+  const authHeader = request.headers.get('Authorization');
+  if (authHeader) {
+    const [scheme, token] = authHeader.split(' ');
+    if (scheme === 'Bearer' && token === QUEUE_SECRET) {
+      return true;
+    }
+  }
+
+  // Check query parameter as fallback (for cron services that don't support headers)
+  const secretParam = request.nextUrl.searchParams.get('secret');
+  if (secretParam === QUEUE_SECRET) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Background queue worker endpoint
  * POST /api/queue/process
@@ -10,8 +36,29 @@ import { runWorker } from '@/lib/queue/worker';
  * - Supabase Edge Functions
  * - External cron service (cron-job.org vb.)
  * - Manuel trigger (test için)
+ *
+ * Authentication:
+ * - Authorization: Bearer <QUEUE_SECRET>
+ * - veya ?secret=<QUEUE_SECRET> query parameter
  */
 export async function POST(request: NextRequest) {
+  // Validate authentication
+  if (!QUEUE_SECRET) {
+    console.error('❌ QUEUE_SECRET environment variable not set');
+    return NextResponse.json(
+      { success: false, error: 'Queue authentication not configured' },
+      { status: 500 }
+    );
+  }
+
+  if (!validateQueueAuth(request)) {
+    console.warn('⚠️ Unauthorized queue process attempt');
+    return NextResponse.json(
+      { success: false, error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
   try {
     console.log('🚀 Queue processing triggered');
 
@@ -47,6 +94,21 @@ export async function POST(request: NextRequest) {
  * GET /api/queue/process
  */
 export async function GET(request: NextRequest) {
+  // Validate authentication for GET as well
+  if (!QUEUE_SECRET) {
+    return NextResponse.json(
+      { success: false, error: 'Queue authentication not configured' },
+      { status: 500 }
+    );
+  }
+
+  if (!validateQueueAuth(request)) {
+    return NextResponse.json(
+      { success: false, error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
   try {
     const { supabase } = await import('@/lib/supabase');
 

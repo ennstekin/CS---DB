@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let supabaseClient: SupabaseClient | null = null;
 
-const VERIMOR_API_KEY = process.env.VERIMOR_API_KEY;
+function getSupabaseClient(): SupabaseClient {
+  if (!supabaseClient) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) {
+      throw new Error("Supabase URL veya Service Role Key bulunamadı");
+    }
+    supabaseClient = createClient(url, key);
+  }
+  return supabaseClient;
+}
+
 const VERIMOR_BASE_URL = process.env.VERIMOR_BASE_URL || "https://api.bulutsantralim.com/api";
 
 interface VerimorCDR {
@@ -33,12 +41,16 @@ interface VerimorCDR {
  */
 export async function POST(request: NextRequest) {
   try {
+    const VERIMOR_API_KEY = process.env.VERIMOR_API_KEY;
+
     if (!VERIMOR_API_KEY) {
       return NextResponse.json(
         { error: "Verimor API key bulunamadı. .env.local dosyasını kontrol edin." },
         { status: 500 }
       );
     }
+
+    const supabase = getSupabaseClient();
 
     // Kaç günlük veri çekileceği (default: 30)
     const { searchParams } = new URL(request.url);

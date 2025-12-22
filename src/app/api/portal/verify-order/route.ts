@@ -1,8 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrderService } from "@/lib/services";
+import { checkRateLimit, getClientIP, RateLimitPresets } from "@/lib/rate-limit";
 
 // POST - Verify order for return portal using İkas API
 export async function POST(request: NextRequest) {
+  // Rate limiting to prevent brute force attacks
+  const clientIP = getClientIP(request);
+  const rateLimitResult = checkRateLimit(`portal-verify:${clientIP}`, RateLimitPresets.auth);
+
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      {
+        error: "Çok fazla deneme yaptınız. Lütfen biraz bekleyin.",
+        success: false,
+        retryAfter: rateLimitResult.retryAfter,
+      },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(rateLimitResult.retryAfter),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(rateLimitResult.resetAt),
+        },
+      }
+    );
+  }
+
   try {
     const body = await request.json();
     const { orderNumber, email } = body;

@@ -4,6 +4,43 @@ import { supabase } from "@/lib/supabase";
 import { createClient } from "@/lib/supabase/server";
 import { logActivity } from "@/lib/logger";
 
+/**
+ * Sanitize HTML to prevent XSS attacks
+ * Removes script tags, event handlers, and dangerous attributes
+ */
+function sanitizeHtml(html: string): string {
+  if (!html) return '';
+
+  return html
+    // Remove script tags and their content
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    // Remove style tags and their content (can contain expressions)
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    // Remove on* event handlers (onclick, onerror, onload, etc.)
+    .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '')
+    .replace(/\s+on\w+\s*=\s*[^\s>]*/gi, '')
+    // Remove javascript: URLs
+    .replace(/javascript\s*:/gi, 'blocked:')
+    // Remove vbscript: URLs
+    .replace(/vbscript\s*:/gi, 'blocked:')
+    // Remove data: URLs (can contain scripts)
+    .replace(/data\s*:\s*text\/html/gi, 'blocked:text/html')
+    // Remove expression() in CSS (IE specific XSS)
+    .replace(/expression\s*\(/gi, 'blocked(')
+    // Remove iframe tags
+    .replace(/<iframe\b[^>]*>/gi, '')
+    .replace(/<\/iframe>/gi, '')
+    // Remove object/embed tags
+    .replace(/<object\b[^>]*>/gi, '')
+    .replace(/<\/object>/gi, '')
+    .replace(/<embed\b[^>]*>/gi, '')
+    // Remove form tags (prevent phishing)
+    .replace(/<form\b[^>]*>/gi, '')
+    .replace(/<\/form>/gi, '')
+    // Remove meta refresh (can redirect)
+    .replace(/<meta\s+http-equiv\s*=\s*["']?refresh["']?[^>]*>/gi, '');
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -82,9 +119,11 @@ export async function POST(request: NextRequest) {
       .replace(/'/g, '&#039;');
 
     const textWithSignature = signature ? `${text}\n\n${signature}` : text;
-    const htmlWithSignature = html && signature
-      ? `${html}<br><br><pre style="font-family: inherit;">${escapeHtml(signature)}</pre>`
-      : html;
+    // Sanitize HTML content to prevent XSS attacks
+    const sanitizedHtml = html ? sanitizeHtml(html) : undefined;
+    const htmlWithSignature = sanitizedHtml && signature
+      ? `${sanitizedHtml}<br><br><pre style="font-family: inherit;">${escapeHtml(signature)}</pre>`
+      : sanitizedHtml;
 
     // Send mail
     const client = await import("@/lib/mail/smtp-client").then(m => new m.SmtpMailClient(config));

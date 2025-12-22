@@ -3,6 +3,34 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { logActivity } from '@/lib/logger'
 
+/**
+ * Validate password strength
+ * Requirements:
+ * - Minimum 8 characters
+ * - At least 1 uppercase letter
+ * - At least 1 lowercase letter
+ * - At least 1 number
+ * - At least 1 special character
+ */
+function validatePassword(password: string): { valid: boolean; message?: string } {
+  if (password.length < 8) {
+    return { valid: false, message: 'Şifre en az 8 karakter olmalıdır' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, message: 'Şifre en az 1 büyük harf içermelidir' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, message: 'Şifre en az 1 küçük harf içermelidir' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, message: 'Şifre en az 1 rakam içermelidir' };
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    return { valid: false, message: 'Şifre en az 1 özel karakter içermelidir (!@#$%^&*...)' };
+  }
+  return { valid: true };
+}
+
 // GET - List all users (Admin only)
 export async function GET() {
   try {
@@ -74,8 +102,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
     }
 
-    if (temporaryPassword.length < 6) {
-      return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
+    const passwordValidation = validatePassword(temporaryPassword);
+    if (!passwordValidation.valid) {
+      return NextResponse.json({ error: passwordValidation.message }, { status: 400 })
     }
 
     // Create auth user using admin client

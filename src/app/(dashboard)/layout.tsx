@@ -1,5 +1,6 @@
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { AuthProvider } from "@/lib/auth/context";
+import { Toaster } from "sonner";
 
 export default function DashboardLayout({
   children,
@@ -16,6 +17,7 @@ export default function DashboardLayout({
           <div className="p-8">{children}</div>
         </main>
       </div>
+      <Toaster richColors position="top-right" />
     </AuthProvider>
   );
 }
