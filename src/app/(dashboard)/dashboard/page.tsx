@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 import {
   Mail,
-  Undo2,
+  RotateCcw,
   Clock,
   CheckCircle2,
   AlertCircle,
   ArrowRight,
-  TrendingUp
+  TrendingUp,
 } from "lucide-react";
 
 interface DashboardStats {
@@ -47,8 +47,6 @@ export default function DashboardPage() {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-
-      // Parallel fetch for better performance (use source=db for fast local queries)
       const [mailsRes, returnsRes] = await Promise.all([
         fetch("/api/mails?limit=100"),
         fetch("/api/returns?status=all&limit=100&source=db"),
@@ -60,32 +58,25 @@ export default function DashboardPage() {
       const mails = mailsData.mails || [];
       const returns = returnsData.returns || [];
 
-      // Calculate stats
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const weekStart = new Date(todayStart);
       weekStart.setDate(weekStart.getDate() - 7);
 
-      // Pending mails (not replied)
       const pendingMails = mails.filter((m: any) => !m.isReplied);
-
-      // Pending returns
       const pendingReturns = returns.filter(
         (r: any) => r.status === "REQUESTED" || r.status === "PENDING_APPROVAL"
       );
 
-      // Today resolved
       const todayResolved = mails.filter((m: any) => {
         if (!m.isReplied) return false;
         const repliedAt = new Date(m.updatedAt || m.createdAt);
         return repliedAt >= todayStart;
       }).length;
 
-      // Weekly total (mails + returns)
       const weeklyMails = mails.filter((m: any) => new Date(m.createdAt) >= weekStart).length;
       const weeklyReturns = returns.filter((r: any) => new Date(r.createdAt) >= weekStart).length;
 
-      // Oldest pending mail
       let oldestPendingMail = null;
       if (pendingMails.length > 0) {
         const sorted = [...pendingMails].sort(
@@ -101,10 +92,8 @@ export default function DashboardPage() {
         };
       }
 
-      // Recent activity - combine mails and returns, sort by date
       const recentActivity: DashboardStats["recentActivity"] = [];
 
-      // Add recent mails (last 5 replied)
       const repliedMails = mails
         .filter((m: any) => m.isReplied)
         .sort((a: any, b: any) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
@@ -121,7 +110,6 @@ export default function DashboardPage() {
         });
       });
 
-      // Add recent returns (last 3)
       const recentReturns = returns
         .sort((a: any, b: any) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
         .slice(0, 3);
@@ -137,13 +125,6 @@ export default function DashboardPage() {
         });
       });
 
-      // Sort all by time (newest first)
-      recentActivity.sort((a, b) => {
-        const timeA = parseTimeAgo(a.time);
-        const timeB = parseTimeAgo(b.time);
-        return timeA - timeB; // Lower value = more recent
-      });
-
       setStats({
         pendingMails: pendingMails.length,
         pendingReturns: pendingReturns.length,
@@ -157,20 +138,6 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Parse time ago string back to minutes for sorting
-  const parseTimeAgo = (timeStr: string): number => {
-    if (timeStr.includes("dk önce")) {
-      return parseInt(timeStr) || 0;
-    }
-    if (timeStr.includes("saat önce")) {
-      return (parseInt(timeStr) || 0) * 60;
-    }
-    if (timeStr.includes("gün önce")) {
-      return (parseInt(timeStr) || 0) * 60 * 24;
-    }
-    return 99999; // Very old
   };
 
   const formatTime = (date: Date): string => {
@@ -198,95 +165,50 @@ export default function DashboardPage() {
     return statusMap[status] || status;
   };
 
+  const kpiCards = [
+    { title: "Bekleyen Mail", value: stats.pendingMails, icon: Mail, color: "text-orange-600", bg: "bg-orange-50" },
+    { title: "Bekleyen İade", value: stats.pendingReturns, icon: RotateCcw, color: "text-blue-600", bg: "bg-blue-50" },
+    { title: "Bugün Çözülen", value: stats.todayResolved, icon: CheckCircle2, color: "text-green-600", bg: "bg-green-50" },
+    { title: "Bu Hafta", value: stats.weeklyTotal, icon: TrendingUp, color: "text-purple-600", bg: "bg-purple-50" },
+  ];
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Müşteri hizmetleri özeti</p>
+        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <p className="text-muted-foreground text-sm">Müşteri hizmetleri özeti</p>
       </div>
 
-      {/* KPI Cards - Sadece 4 önemli metrik */}
+      {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Bekleyen Mail
-            </CardTitle>
-            <Mail className="h-4 w-4 text-orange-500" />
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="h-8 w-12 animate-pulse rounded bg-muted" />
-            ) : (
-              <div className="text-3xl font-bold">
-                {stats.pendingMails}
+        {kpiCards.map((kpi) => (
+          <Card key={kpi.title}>
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">{kpi.title}</p>
+                  {loading ? (
+                    <div className="h-8 w-12 bg-muted animate-pulse rounded mt-1" />
+                  ) : (
+                    <p className="text-2xl font-semibold mt-1">{kpi.value}</p>
+                  )}
+                </div>
+                <div className={cn("p-2.5 rounded-lg", kpi.bg)}>
+                  <kpi.icon className={cn("h-5 w-5", kpi.color)} />
+                </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Bekleyen İade
-            </CardTitle>
-            <Undo2 className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="h-8 w-12 animate-pulse rounded bg-muted" />
-            ) : (
-              <div className="text-3xl font-bold">
-                {stats.pendingReturns}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Bugün Çözülen
-            </CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="h-8 w-12 animate-pulse rounded bg-muted" />
-            ) : (
-              <div className="text-3xl font-bold">
-                {stats.todayResolved}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Bu Hafta
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-purple-500" />
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="h-8 w-12 animate-pulse rounded bg-muted" />
-            ) : (
-              <div className="text-3xl font-bold">
-                {stats.weeklyTotal}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      {/* İki Kolon: Dikkat Gerektiren + Son Aktivite */}
+      {/* Two Column Layout */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Dikkat Gerektiren */}
+        {/* Attention Required */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="text-base font-medium flex items-center gap-2">
               <AlertCircle className="h-4 w-4 text-orange-500" />
               Dikkat Gerektiren
             </CardTitle>
@@ -294,122 +216,107 @@ export default function DashboardPage() {
           <CardContent className="space-y-3">
             {loading ? (
               <div className="space-y-3">
-                <div className="h-16 animate-pulse rounded bg-muted" />
-                <div className="h-16 animate-pulse rounded bg-muted" />
+                <div className="h-14 bg-muted animate-pulse rounded-lg" />
+                <div className="h-14 bg-muted animate-pulse rounded-lg" />
+              </div>
+            ) : stats.pendingMails === 0 && stats.pendingReturns === 0 ? (
+              <div className="text-center py-8">
+                <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                <p className="font-medium">Tüm işler tamamlandı</p>
+                <p className="text-sm text-muted-foreground">Bekleyen iş yok</p>
               </div>
             ) : (
               <>
-                {stats.pendingMails === 0 && stats.pendingReturns === 0 ? (
-                  <div className="flex items-center justify-center py-8 text-muted-foreground">
-                    <CheckCircle2 className="mr-2 h-5 w-5 text-green-500" />
-                    Tüm işler tamamlandı
-                  </div>
-                ) : (
-                  <>
-                    {stats.oldestPendingMail && stats.oldestPendingMail.hours > 24 && (
-                      <Link href={`/dashboard/mails`}>
-                        <div className="flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 p-3 transition-colors hover:bg-orange-100 dark:border-orange-900 dark:bg-orange-950 dark:hover:bg-orange-900">
-                          <div className="flex items-center gap-3">
-                            <Clock className="h-5 w-5 text-orange-500" />
-                            <div>
-                              <p className="text-sm font-medium">
-                                {stats.oldestPendingMail.hours} saattir yanıtsız mail
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {stats.oldestPendingMail.from}
-                              </p>
-                            </div>
-                          </div>
-                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                {stats.oldestPendingMail && stats.oldestPendingMail.hours > 24 && (
+                  <Link href="/dashboard/mails">
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors group">
+                      <div className="flex items-center gap-3">
+                        <Clock className="h-4 w-4 text-orange-600" />
+                        <div>
+                          <p className="text-sm font-medium">{stats.oldestPendingMail.hours} saattir yanıtsız</p>
+                          <p className="text-xs text-muted-foreground">{stats.oldestPendingMail.from}</p>
                         </div>
-                      </Link>
-                    )}
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-orange-400 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </Link>
+                )}
 
-                    {stats.pendingMails > 0 && (
-                      <Link href="/dashboard/mails">
-                        <div className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-accent">
-                          <div className="flex items-center gap-3">
-                            <Mail className="h-5 w-5 text-muted-foreground" />
-                            <div>
-                              <p className="text-sm font-medium">
-                                {stats.pendingMails} mail yanıt bekliyor
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                E-postalara git
-                              </p>
-                            </div>
-                          </div>
-                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                {stats.pendingMails > 0 && (
+                  <Link href="/dashboard/mails">
+                    <div className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors group">
+                      <div className="flex items-center gap-3">
+                        <Mail className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-sm font-medium">{stats.pendingMails} mail yanıt bekliyor</p>
+                          <p className="text-xs text-muted-foreground">E-postalara git</p>
                         </div>
-                      </Link>
-                    )}
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </Link>
+                )}
 
-                    {stats.pendingReturns > 0 && (
-                      <Link href="/dashboard/returns?status=PENDING_APPROVAL">
-                        <div className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-accent">
-                          <div className="flex items-center gap-3">
-                            <Undo2 className="h-5 w-5 text-muted-foreground" />
-                            <div>
-                              <p className="text-sm font-medium">
-                                {stats.pendingReturns} iade onay bekliyor
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                İadelere git
-                              </p>
-                            </div>
-                          </div>
-                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                {stats.pendingReturns > 0 && (
+                  <Link href="/dashboard/returns">
+                    <div className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors group">
+                      <div className="flex items-center gap-3">
+                        <RotateCcw className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-sm font-medium">{stats.pendingReturns} iade onay bekliyor</p>
+                          <p className="text-xs text-muted-foreground">İadelere git</p>
                         </div>
-                      </Link>
-                    )}
-                  </>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </Link>
                 )}
               </>
             )}
           </CardContent>
         </Card>
 
-        {/* Son Aktiviteler */}
+        {/* Recent Activity */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Son Aktiviteler</CardTitle>
+            <CardTitle className="text-base font-medium">Son Aktiviteler</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-12 animate-pulse rounded bg-muted" />
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-full bg-muted animate-pulse" />
+                    <div className="flex-1">
+                      <div className="h-4 w-3/4 bg-muted animate-pulse rounded" />
+                      <div className="h-3 w-1/2 bg-muted animate-pulse rounded mt-1" />
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : stats.recentActivity.length === 0 ? (
-              <div className="flex items-center justify-center py-8 text-muted-foreground">
+              <div className="text-center py-8 text-muted-foreground">
                 Henüz aktivite yok
               </div>
             ) : (
               <div className="space-y-3">
                 {stats.recentActivity.map((activity) => (
-                  <div
-                    key={`${activity.type}-${activity.id}`}
-                    className="flex items-center gap-3"
-                  >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                  <div key={`${activity.type}-${activity.id}`} className="flex items-center gap-3">
+                    <div className={cn(
+                      "h-9 w-9 rounded-full flex items-center justify-center",
+                      activity.type === "mail" ? "bg-orange-50" : "bg-blue-50"
+                    )}>
                       {activity.type === "mail" ? (
-                        <Mail className="h-4 w-4" />
+                        <Mail className="h-4 w-4 text-orange-600" />
                       ) : (
-                        <Undo2 className="h-4 w-4" />
+                        <RotateCcw className="h-4 w-4 text-blue-600" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {activity.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {activity.description}
-                      </p>
+                      <p className="text-sm font-medium truncate">{activity.title}</p>
+                      <p className="text-xs text-muted-foreground">{activity.description}</p>
                     </div>
-                    <Badge variant="outline" className="text-xs shrink-0">
-                      {activity.time}
-                    </Badge>
+                    <span className="text-xs text-muted-foreground">{activity.time}</span>
                   </div>
                 ))}
               </div>

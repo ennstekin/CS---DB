@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth, UserRole } from "@/lib/auth/context";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   LayoutDashboard,
   Phone,
@@ -29,56 +28,19 @@ interface Route {
 }
 
 const routes: Route[] = [
-  {
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    href: "/dashboard",
-  },
-  {
-    label: "Mailler",
-    icon: Mail,
-    href: "/dashboard/mails",
-  },
-  {
-    label: "Talepler",
-    icon: Ticket,
-    href: "/dashboard/tickets",
-  },
-  {
-    label: "Çağrılar",
-    icon: Phone,
-    href: "/dashboard/calls",
-  },
-  {
-    label: "İadeler",
-    icon: RotateCcw,
-    href: "/dashboard/returns",
-  },
-  {
-    label: "Raporlar",
-    icon: BarChart3,
-    href: "/dashboard/reports",
-    allowedRoles: ["ADMIN", "SUPERVISOR"],
-  },
-  {
-    label: "Ayarlar",
-    icon: Settings,
-    href: "/dashboard/settings",
-    separator: true,
-    allowedRoles: ["ADMIN", "SUPERVISOR"],
-  },
+  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+  { label: "Mailler", icon: Mail, href: "/dashboard/mails" },
+  { label: "Talepler", icon: Ticket, href: "/dashboard/tickets" },
+  { label: "Çağrılar", icon: Phone, href: "/dashboard/calls" },
+  { label: "İadeler", icon: RotateCcw, href: "/dashboard/returns" },
+  { label: "Raporlar", icon: BarChart3, href: "/dashboard/reports", allowedRoles: ["ADMIN", "SUPERVISOR"] },
+  { label: "Ayarlar", icon: Settings, href: "/dashboard/settings", separator: true, allowedRoles: ["ADMIN", "SUPERVISOR"] },
 ];
 
-const roleBadgeColors: Record<UserRole, string> = {
-  ADMIN: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-  SUPERVISOR: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-  AGENT: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
-};
-
-const roleLabels: Record<UserRole, string> = {
-  ADMIN: "Admin",
-  SUPERVISOR: "Supervisor",
-  AGENT: "Agent",
+const roleColors: Record<UserRole, string> = {
+  ADMIN: "text-red-600 bg-red-50",
+  SUPERVISOR: "text-blue-600 bg-blue-50",
+  AGENT: "text-green-600 bg-green-50",
 };
 
 export function Sidebar() {
@@ -91,88 +53,81 @@ export function Sidebar() {
     router.push("/login");
   };
 
-  // Filter routes based on user role
-  // Show all routes while loading, filter after user data is available
   const filteredRoutes = routes.filter((route) => {
     if (!route.allowedRoles) return true;
-    if (loading) return true; // Show all routes while loading
+    if (loading) return true;
     if (!appUser) return false;
     return route.allowedRoles.includes(appUser.role);
   });
 
   return (
-    <div className="space-y-4 py-4 flex flex-col h-full bg-secondary">
-      <div className="px-3 py-2 flex-1">
-        <Link href="/dashboard" className="flex items-center pl-3 mb-10">
-          <img src="/logo.png" alt="PAEN" className="h-14 w-auto" />
+    <div className="flex flex-col h-full bg-white border-r">
+      {/* Logo */}
+      <div className="h-16 flex items-center px-6 border-b">
+        <Link href="/dashboard" className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-sm">SC</span>
+          </div>
+          <span className="font-semibold text-lg">Smart CS</span>
         </Link>
+      </div>
 
-        {/* User Info Section */}
-        <div className="px-3 py-4 mb-6 bg-background/50 rounded-lg">
-          {loading ? (
-            <div className="flex items-center justify-center py-2">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      {/* User Info */}
+      {appUser && (
+        <div className="px-4 py-4 border-b">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+              <User className="h-4 w-4 text-muted-foreground" />
             </div>
-          ) : appUser ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <User className="h-4 w-4 text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{appUser.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {appUser.email}
-                  </p>
-                </div>
-              </div>
-              <Badge
-                variant="secondary"
-                className={cn("text-xs", roleBadgeColors[appUser.role])}
-              >
-                {roleLabels[appUser.role]}
-              </Badge>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{appUser.name}</p>
+              <span className={cn("text-xs px-2 py-0.5 rounded-full", roleColors[appUser.role])}>
+                {appUser.role}
+              </span>
             </div>
-          ) : null}
+          </div>
         </div>
+      )}
 
-        <div className="space-y-1">
-          {filteredRoutes.map((route) => (
+      {loading && (
+        <div className="px-4 py-4 border-b flex justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
+      {/* Navigation */}
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        {filteredRoutes.map((route) => {
+          const isActive = pathname === route.href;
+          return (
             <div key={route.href}>
-              {route.separator && (
-                <div className="my-4 border-t border-border" />
-              )}
+              {route.separator && <div className="my-3 border-t" />}
               <Link
                 href={route.disabled ? "#" : route.href}
                 className={cn(
-                  "text-sm group flex p-3 w-full justify-start font-medium cursor-pointer hover:text-primary hover:bg-primary/10 rounded-lg transition",
-                  pathname === route.href
-                    ? "text-primary bg-primary/10"
-                    : "text-muted-foreground",
+                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                  isActive
+                    ? "bg-primary text-white"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
                   route.disabled && "opacity-50 cursor-not-allowed"
                 )}
               >
-                <div className="flex items-center flex-1">
-                  <route.icon className={cn("h-5 w-5 mr-3")} />
-                  {route.label}
-                  {route.disabled && (
-                    <span className="ml-auto text-xs">(Yakında)</span>
-                  )}
-                </div>
+                <route.icon className="h-4 w-4" />
+                {route.label}
               </Link>
             </div>
-          ))}
-        </div>
-      </div>
+          );
+        })}
+      </nav>
 
-      {/* Logout Section */}
-      <div className="px-3 py-2 border-t border-border">
+      {/* Logout */}
+      <div className="p-3 border-t">
         <Button
           variant="ghost"
-          className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          className="w-full justify-start text-muted-foreground hover:text-red-600 hover:bg-red-50"
           onClick={handleLogout}
         >
-          <LogOut className="h-5 w-5 mr-3" />
+          <LogOut className="h-4 w-4 mr-2" />
           Çıkış Yap
         </Button>
       </div>

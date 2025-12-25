@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { AiReplyDialog } from "@/components/dashboard/ai-reply-dialog";
 import { OrderDetailDialog } from "@/components/dashboard/order-detail-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { sanitizeHtml } from "@/lib/utils/sanitize";
 import {
   Tooltip,
   TooltipContent,
@@ -41,6 +42,7 @@ import {
   User,
   Filter,
   ChevronDown,
+  Keyboard,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
@@ -54,6 +56,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   Popover,
   PopoverContent,
@@ -69,6 +72,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { format, formatDistanceToNow } from "date-fns";
 import { tr } from "date-fns/locale";
+import { useKeyboardShortcuts, KEYBOARD_SHORTCUTS } from "@/hooks/use-keyboard-shortcuts";
+import { KeyboardShortcutsDialog } from "@/components/ui/keyboard-shortcuts-dialog";
 
 interface DbMail {
   id: string;
@@ -190,6 +195,8 @@ export default function MailsPage() {
   const [isSendingReply, setIsSendingReply] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
+  const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const commonLabels = ["INBOX", "SENT", "DRAFTS", "SPAM", "TRASH", "ARCHIVE", "IMPORTANT", "STARRED"];
 
@@ -223,6 +230,44 @@ export default function MailsPage() {
   });
 
   const activeFiltersCount = (statusFilter !== "ALL" ? 1 : 0) + (categoryFilter !== "ALL" ? 1 : 0);
+
+  // Keyboard navigation helpers
+  const navigateThread = useCallback((direction: "next" | "prev") => {
+    const currentIndex = filteredThreads.findIndex(t => t.id === selectedThread?.id);
+    let newIndex: number;
+
+    if (direction === "next") {
+      newIndex = currentIndex === -1 ? 0 : Math.min(currentIndex + 1, filteredThreads.length - 1);
+    } else {
+      newIndex = currentIndex === -1 ? filteredThreads.length - 1 : Math.max(currentIndex - 1, 0);
+    }
+
+    const newThread = filteredThreads[newIndex];
+    if (newThread) {
+      setSelectedThread(newThread);
+      setSelectedMail(newThread.latestMail);
+    }
+  }, [filteredThreads, selectedThread]);
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts([
+    { key: "j", callback: () => navigateThread("next") },
+    { key: "k", callback: () => navigateThread("prev") },
+    { key: "r", callback: () => selectedMail && setShowManualReply(true) },
+    { key: "a", callback: () => selectedMail && !isGeneratingReply && generateAiReply() },
+    { key: "/", callback: () => searchInputRef.current?.focus() },
+    { key: "Escape", callback: () => {
+      if (showManualReply) {
+        setShowManualReply(false);
+      } else if (shortcutsDialogOpen) {
+        setShortcutsDialogOpen(false);
+      } else {
+        setSelectedThread(null);
+        setSelectedMail(null);
+      }
+    }},
+    { key: "?", callback: () => setShortcutsDialogOpen(true) },
+  ]);
 
   useEffect(() => {
     loadMails();
@@ -362,7 +407,7 @@ export default function MailsPage() {
       setAiSuggestedReply(data.suggestedResponse || data.response || data.reply || '');
     } catch (error) {
       console.error('Error generating AI reply:', error);
-      alert('AI cevap oluşturulurken hata oluştu');
+      toast.error('AI cevap oluşturulurken hata oluştu');
     } finally {
       setIsGeneratingReply(false);
     }
@@ -383,7 +428,7 @@ export default function MailsPage() {
       setMails(mails.map(m => m.id === selectedMail.id ? { ...m, labels: data.labels } : m));
       setNewLabelInput("");
     } catch (error) {
-      alert('Label eklenemedi');
+      toast.error('Label eklenemedi');
     } finally {
       setIsAddingLabel(false);
     }
@@ -402,7 +447,7 @@ export default function MailsPage() {
       setSelectedMail({ ...selectedMail, labels: data.labels });
       setMails(mails.map(m => m.id === selectedMail.id ? { ...m, labels: data.labels } : m));
     } catch (error) {
-      alert('Label silinemedi');
+      toast.error('Label silinemedi');
     }
   };
 
@@ -420,8 +465,9 @@ export default function MailsPage() {
       setSelectedMail(updatedMail);
       setMails(mails.map(m => m.id === selectedMail.id ? updatedMail : m));
       setSelectedOrderNumber(orderNumber);
+      toast.success('Sipariş bağlandı');
     } catch (error) {
-      alert('Sipariş bağlanamadı');
+      toast.error('Sipariş bağlanamadı');
     } finally {
       setIsLinkingOrder(false);
     }
@@ -436,8 +482,9 @@ export default function MailsPage() {
       setSelectedMail(updatedMail);
       setMails(mails.map(m => m.id === selectedMail.id ? updatedMail : m));
       setSelectedOrderNumber("");
+      toast.success('Sipariş bağlantısı kaldırıldı');
     } catch (error) {
-      alert('Bağlantı kaldırılamadı');
+      toast.error('Bağlantı kaldırılamadı');
     } finally {
       setIsLinkingOrder(false);
     }
@@ -458,8 +505,9 @@ export default function MailsPage() {
       setSelectedMail(updatedMail);
       setMails(mails.map(m => m.id === selectedMail.id ? updatedMail : m));
       setSelectedReturnNumber(data.matchedReturnNumber || returnNumber);
+      toast.success('İade bağlandı');
     } catch (error) {
-      alert('İade bağlanamadı');
+      toast.error('İade bağlanamadı');
     } finally {
       setIsLinkingReturn(false);
     }
@@ -474,8 +522,9 @@ export default function MailsPage() {
       setSelectedMail(updatedMail);
       setMails(mails.map(m => m.id === selectedMail.id ? updatedMail : m));
       setSelectedReturnNumber("");
+      toast.success('İade bağlantısı kaldırıldı');
     } catch (error) {
-      alert('Bağlantı kaldırılamadı');
+      toast.error('Bağlantı kaldırılamadı');
     } finally {
       setIsLinkingReturn(false);
     }
@@ -500,8 +549,9 @@ export default function MailsPage() {
       if (!response.ok) throw new Error('Talep oluşturulamadı');
       const data = await response.json();
       router.push(`/dashboard/tickets/${data.ticket.id}`);
+      toast.success('Talep oluşturuldu');
     } catch (error) {
-      alert('Talep oluşturulamadı');
+      toast.error('Talep oluşturulamadı');
     } finally {
       setIsCreatingTicket(false);
     }
@@ -548,8 +598,9 @@ export default function MailsPage() {
           });
         }, 100);
       }
+      toast.success('Mail silindi');
     } catch (error) {
-      alert('Mail silinemedi');
+      toast.error('Mail silinemedi');
     } finally {
       setIsDeletingMail(false);
       // Re-enable auto-refresh
@@ -569,7 +620,7 @@ export default function MailsPage() {
         return;
       }
     }
-    alert('Mail içeriğinde sipariş numarası bulunamadı.');
+    toast.warning('Mail içeriğinde sipariş numarası bulunamadı');
   };
 
   const findReturnInMail = () => {
@@ -587,7 +638,7 @@ export default function MailsPage() {
       handleLinkReturn(selectedMail.matchedOrderNumber);
       return;
     }
-    alert('Mail içeriğinde iade numarası bulunamadı.');
+    toast.warning('Mail içeriğinde iade numarası bulunamadı');
   };
 
   const formatMailDate = (date: Date | string) => {
@@ -632,6 +683,20 @@ export default function MailsPage() {
                 {autoRefreshEnabled ? "Otomatik yenileme açık" : "Otomatik yenileme kapalı"}
               </TooltipContent>
             </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShortcutsDialogOpen(true)}
+                >
+                  <Keyboard className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Klavye kısayolları (?)
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
@@ -649,6 +714,7 @@ export default function MailsPage() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
+                    ref={searchInputRef}
                     placeholder="Mail ara..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -783,11 +849,15 @@ export default function MailsPage() {
                         setSelectedMail(latestMail);
                       }}
                       className={cn(
-                        "flex gap-3 p-3 cursor-pointer border-b transition-colors",
+                        "flex gap-3 p-3 cursor-pointer border-b transition-colors relative",
                         isSelected ? "bg-accent" : "hover:bg-muted/50",
-                        hasUnread && !isSelected && "bg-blue-50/50 dark:bg-blue-950/20"
+                        hasUnread && !isSelected && "bg-blue-50 dark:bg-blue-950/30 border-l-4 border-l-blue-500"
                       )}
                     >
+                      {/* Unread dot indicator */}
+                      {hasUnread && !isSelected && (
+                        <div className="absolute top-4 left-1 w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                      )}
                       <Avatar className={cn("h-10 w-10 flex-shrink-0", avatarColor)}>
                         <AvatarFallback className="text-white text-xs font-medium">
                           {initials}
@@ -1105,7 +1175,7 @@ export default function MailsPage() {
                         {mail.bodyHtml ? (
                           <div
                             className="prose prose-sm max-w-none [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded [&_a]:text-blue-600"
-                            dangerouslySetInnerHTML={{ __html: mail.bodyHtml }}
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(mail.bodyHtml) }}
                           />
                         ) : (
                           <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
@@ -1181,6 +1251,11 @@ export default function MailsPage() {
           }}
         />
         <OrderDetailDialog open={orderDetailOpen} onOpenChange={setOrderDetailOpen} orderNumber={selectedOrderNumber} />
+        <KeyboardShortcutsDialog
+          open={shortcutsDialogOpen}
+          onOpenChange={setShortcutsDialogOpen}
+          shortcuts={KEYBOARD_SHORTCUTS.mails}
+        />
       </div>
     </TooltipProvider>
   );

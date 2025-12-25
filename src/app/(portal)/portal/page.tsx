@@ -6,7 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Undo2, Package, Mail } from "lucide-react";
+import { Package, Mail, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function PortalPage() {
   const router = useRouter();
@@ -27,7 +28,6 @@ export default function PortalPage() {
     setLoading(true);
 
     try {
-      // Sipariş doğrulama için API çağrısı
       const response = await fetch("/api/portal/verify-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -37,7 +37,6 @@ export default function PortalPage() {
       const data = await response.json();
 
       if (response.ok && data.success) {
-        // Sipariş bilgilerini sessionStorage'a kaydet (İkas'tan gelen tüm detaylarla)
         sessionStorage.setItem("returnOrder", JSON.stringify({
           orderNumber: data.order?.orderNumber || orderNumber,
           email,
@@ -52,10 +51,18 @@ export default function PortalPage() {
           items: data.order?.items || [],
         }));
 
-        // İade nedeni seçim sayfasına yönlendir
-        router.push("/portal/reason");
+        router.push("/portal/select");
       } else {
-        setError(data.error || "Sipariş bulunamadı. Lütfen bilgilerinizi kontrol edin.");
+        // Daha açıklayıcı hata mesajları
+        if (data.error?.includes("not found") || data.error?.includes("bulunamadı")) {
+          setError("Sipariş numarası bulunamadı. Lütfen sipariş numaranızı kontrol edin.");
+        } else if (data.error?.includes("email") || data.error?.includes("eşleşmiyor")) {
+          setError("E-posta adresi bu siparişle eşleşmiyor. Sipariş verirken kullandığınız e-posta adresini girin.");
+        } else if (data.error?.includes("expired") || data.error?.includes("süre")) {
+          setError("Bu sipariş için iade süresi dolmuş. İade taleplerini sipariş tarihinden itibaren 30 gün içinde yapabilirsiniz.");
+        } else {
+          setError(data.error || "Sipariş doğrulanamadı. Lütfen bilgilerinizi kontrol edip tekrar deneyin.");
+        }
       }
     } catch (err) {
       setError("Bir hata oluştu. Lütfen tekrar deneyin.");
@@ -64,112 +71,170 @@ export default function PortalPage() {
     }
   };
 
+  const steps = [
+    { step: 1, text: "Sipariş bilgilerinizi doğrulayın", active: true },
+    { step: 2, text: "İade edilecek ürünleri seçin", active: false },
+    { step: 3, text: "İade nedeninizi seçin", active: false },
+    { step: 4, text: "Ürün fotoğraflarını yükleyin", active: false },
+    { step: 5, text: "İade talebinizi gönderin", active: false },
+  ];
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
-            <Undo2 className="h-8 w-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">İade Talebi</h1>
-          <p className="text-gray-600">
-            Siparişinizi kolayca iade edin
-          </p>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Sipariş Doğrulama</CardTitle>
-            <CardDescription>
-              İade işlemine başlamak için sipariş bilgilerinizi girin
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleVerify} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="orderNumber" className="flex items-center gap-2">
-                  <Package className="h-4 w-4" />
-                  Sipariş Numarası
-                </Label>
-                <Input
-                  id="orderNumber"
-                  type="text"
-                  placeholder="ÖRN: #12345"
-                  value={orderNumber}
-                  onChange={(e) => setOrderNumber(e.target.value)}
-                  disabled={loading}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email" className="flex items-center gap-2">
-                  <Mail className="h-4 w-4" />
-                  E-posta Adresi
-                </Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="ornek@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={loading}
-                  required
-                />
-              </div>
-
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-600">{error}</p>
-                </div>
-              )}
-
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={loading}
-              >
-                {loading ? "Kontrol ediliyor..." : "Devam Et"}
-              </Button>
-            </form>
-
-            <div className="mt-6 pt-6 border-t">
-              <h3 className="font-semibold text-sm mb-2">İade Süreci:</h3>
-              <ol className="space-y-2 text-sm text-muted-foreground">
-                <li className="flex items-start gap-2">
-                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-100 text-blue-600 text-xs font-bold flex-shrink-0 mt-0.5">1</span>
-                  <span>Sipariş bilgilerinizi doğrulayın</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex-shrink-0 mt-0.5">2</span>
-                  <span>İade nedeninizi seçin</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex-shrink-0 mt-0.5">3</span>
-                  <span>Ürün fotoğraflarını yükleyin (isteğe bağlı)</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex-shrink-0 mt-0.5">4</span>
-                  <span>İade talebinizi gönderin</span>
-                </li>
-              </ol>
+    <div className="min-h-screen bg-muted/30">
+      {/* Header */}
+      <div className="bg-white border-b sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-sm">SC</span>
             </div>
-          </CardContent>
-        </Card>
+            <div>
+              <h1 className="font-semibold">Smart CS</h1>
+              <p className="text-xs text-muted-foreground">İade Portalı</p>
+            </div>
+          </div>
+          <a
+            href="/portal/track"
+            className="text-sm text-primary hover:underline font-medium flex items-center gap-1"
+          >
+            İade Takip
+            <ArrowRight className="h-3 w-3" />
+          </a>
+        </div>
+      </div>
 
-        <div className="mt-6 text-center space-y-2">
-          <p className="text-sm text-gray-600">
-            Mevcut iade talebiniz mi var?{" "}
-            <a href="/portal/track" className="text-blue-600 hover:underline font-medium">
-              İade Takip
-            </a>
-          </p>
-          <p className="text-sm text-gray-600">
-            Sorularınız mı var?{" "}
-            <a href="mailto:destek@ornek.com" className="text-blue-600 hover:underline">
-              Bize ulaşın
-            </a>
-          </p>
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="grid lg:grid-cols-5 gap-8">
+          {/* Left Side - Form */}
+          <div className="lg:col-span-3 space-y-6">
+            <div>
+              <h1 className="text-2xl font-semibold">İade Talebi Oluştur</h1>
+              <p className="text-muted-foreground text-sm mt-1">
+                Siparişinizi kolayca iade edin
+              </p>
+            </div>
+
+            <Card>
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-primary/10">
+                    <Package className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Sipariş Doğrulama</CardTitle>
+                    <CardDescription className="text-sm">
+                      İade işlemine başlamak için sipariş bilgilerinizi girin
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleVerify} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="orderNumber">Sipariş Numarası</Label>
+                    <div className="relative">
+                      <Package className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="orderNumber"
+                        type="text"
+                        placeholder="ÖRN: #12345"
+                        value={orderNumber}
+                        onChange={(e) => setOrderNumber(e.target.value)}
+                        disabled={loading}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="email">E-posta Adresi</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="email"
+                        type="email"
+                        placeholder="ornek@email.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        disabled={loading}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {error && (
+                    <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
+                      <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Kontrol ediliyor...
+                      </>
+                    ) : (
+                      <>
+                        Devam Et
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Side - Steps */}
+          <div className="lg:col-span-2">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">İade Süreci</CardTitle>
+                <CardDescription className="text-sm">
+                  5 kolay adımda iade işleminizi tamamlayın
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {steps.map((step) => (
+                  <div
+                    key={step.step}
+                    className={cn(
+                      "flex items-center gap-3 p-3 rounded-lg border",
+                      step.active ? "bg-primary/5 border-primary/20" : "border-transparent"
+                    )}
+                  >
+                    <div className={cn(
+                      "w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0",
+                      step.active
+                        ? "bg-primary text-white"
+                        : "bg-muted text-muted-foreground"
+                    )}>
+                      {step.step}
+                    </div>
+                    <span className={cn(
+                      "text-sm",
+                      step.active ? "text-foreground font-medium" : "text-muted-foreground"
+                    )}>
+                      {step.text}
+                    </span>
+                  </div>
+                ))}
+
+                <div className="pt-3 border-t">
+                  <p className="text-xs text-muted-foreground">
+                    Sorularınız mı var?{" "}
+                    <a href="mailto:destek@ornek.com" className="text-primary hover:underline">
+                      Bize ulaşın
+                    </a>
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>

@@ -15,8 +15,56 @@ export class OrderService {
   private cache = new Map<string, CacheEntry>();
   private readonly CACHE_TTL = 900000; // 15 minutes in milliseconds
   private readonly MAX_CACHE_SIZE = 100; // Prevent memory leak
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
-  constructor(private ikasClient: IkasClient) {}
+  constructor(private ikasClient: IkasClient) {
+    // Her 5 dakikada bir expired cache entries temizle
+    this.startCleanupInterval();
+  }
+
+  /**
+   * Start periodic cleanup of expired cache entries
+   */
+  private startCleanupInterval(): void {
+    // Önce mevcut interval'ı temizle
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+
+    // Her 5 dakikada bir expired entries temizle
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupExpiredEntries();
+    }, 5 * 60 * 1000);
+  }
+
+  /**
+   * Clean up expired cache entries (Memory leak fix)
+   */
+  private cleanupExpiredEntries(): void {
+    const now = Date.now();
+    let cleanedCount = 0;
+
+    for (const [key, entry] of this.cache.entries()) {
+      if (now > entry.expiresAt) {
+        this.cache.delete(key);
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      console.log(`🧹 Cleaned ${cleanedCount} expired cache entries`);
+    }
+  }
+
+  /**
+   * Stop cleanup interval (for cleanup on shutdown)
+   */
+  stopCleanup(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+  }
 
   /**
    * Get order by order number (with caching)

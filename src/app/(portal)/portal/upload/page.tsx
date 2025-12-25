@@ -168,12 +168,14 @@ export default function UploadPage() {
         <div className="flex items-center justify-center mb-8">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center text-sm font-bold">✓</div>
-            <div className="w-16 h-1 bg-green-500"></div>
+            <div className="w-12 h-1 bg-green-500"></div>
             <div className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center text-sm font-bold">✓</div>
-            <div className="w-16 h-1 bg-blue-500"></div>
-            <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-sm font-bold">3</div>
-            <div className="w-16 h-1 bg-gray-300"></div>
-            <div className="w-8 h-8 rounded-full bg-gray-300 text-white flex items-center justify-center text-sm font-bold">4</div>
+            <div className="w-12 h-1 bg-green-500"></div>
+            <div className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center text-sm font-bold">✓</div>
+            <div className="w-12 h-1 bg-blue-500"></div>
+            <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-sm font-bold">4</div>
+            <div className="w-12 h-1 bg-gray-300"></div>
+            <div className="w-8 h-8 rounded-full bg-gray-300 text-white flex items-center justify-center text-sm font-bold">5</div>
           </div>
         </div>
 

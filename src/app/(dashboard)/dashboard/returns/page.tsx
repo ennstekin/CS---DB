@@ -41,6 +41,7 @@ import {
   Search,
   Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 
 interface Return {
   id: string;
@@ -242,12 +243,13 @@ export default function ReturnsPage() {
       }
 
       // Success - close dialog and refresh
+      toast.success("İade talebi başarıyla oluşturuldu");
       resetDialog();
       fetchAllReturns();
       setActiveTab("manual");
     } catch (error) {
       console.error("Error creating return:", error);
-      alert(error instanceof Error ? error.message : "İade oluşturulurken bir hata oluştu");
+      toast.error(error instanceof Error ? error.message : "İade oluşturulurken bir hata oluştu");
     } finally {
       setCreatingReturn(false);
     }

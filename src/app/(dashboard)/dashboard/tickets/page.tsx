@@ -39,7 +39,17 @@ import {
   Loader2,
   Plus,
   Trash2,
+  MoreHorizontal,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 
 interface TicketItem {
   id: string;
@@ -105,6 +115,10 @@ export default function TicketsPage() {
   const [ticketToDelete, setTicketToDelete] = useState<TicketItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Bulk Selection State
+  const [selectedTickets, setSelectedTickets] = useState<Set<string>>(new Set());
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+
   useEffect(() => {
     fetchTickets();
   }, [statusFilter]);
@@ -141,7 +155,7 @@ export default function TicketsPage() {
       const data = await response.json();
 
       if (data.success) {
-        alert(`${data.grouped} mail gruplandı, ${data.newTickets} yeni talep oluşturuldu`);
+        toast.success(`${data.grouped} mail gruplandı, ${data.newTickets} yeni talep oluşturuldu`);
         fetchTickets();
       }
     } catch (error) {
@@ -153,7 +167,7 @@ export default function TicketsPage() {
 
   const handleCreateTicket = async () => {
     if (!newTicket.subject.trim()) {
-      alert("Konu alanı zorunludur");
+      toast.error("Konu alanı zorunludur");
       return;
     }
 
@@ -189,11 +203,11 @@ export default function TicketsPage() {
         // Navigate to new ticket
         router.push(`/dashboard/tickets/${data.ticket.id}`);
       } else {
-        alert("Talep oluşturulamadı: " + (data.error || "Bilinmeyen hata"));
+        toast.error("Talep oluşturulamadı: " + (data.error || "Bilinmeyen hata"));
       }
     } catch (error) {
       console.error("Error creating ticket:", error);
-      alert("Talep oluşturulurken hata oluştu");
+      toast.error("Talep oluşturulurken hata oluştu");
     } finally {
       setCreating(false);
     }
@@ -219,16 +233,117 @@ export default function TicketsPage() {
         setTickets(tickets.filter((t) => t.id !== ticketToDelete.id));
         setDeleteDialogOpen(false);
         setTicketToDelete(null);
+        toast.success("Talep başarıyla silindi");
       } else {
         const data = await response.json();
-        alert("Silme hatası: " + (data.error || "Bilinmeyen hata"));
+        toast.error("Silme hatası: " + (data.error || "Bilinmeyen hata"));
       }
     } catch (error) {
       console.error("Error deleting ticket:", error);
-      alert("Talep silinirken hata oluştu");
+      toast.error("Talep silinirken hata oluştu");
     } finally {
       setDeleting(false);
     }
+  };
+
+  // Bulk Selection Handlers
+  const toggleTicketSelection = (ticketId: string) => {
+    const newSelected = new Set(selectedTickets);
+    if (newSelected.has(ticketId)) {
+      newSelected.delete(ticketId);
+    } else {
+      newSelected.add(ticketId);
+    }
+    setSelectedTickets(newSelected);
+  };
+
+  const toggleAllTickets = () => {
+    if (selectedTickets.size === filteredTickets.length) {
+      setSelectedTickets(new Set());
+    } else {
+      setSelectedTickets(new Set(filteredTickets.map(t => t.id)));
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedTickets(new Set());
+  };
+
+  const handleBulkStatusUpdate = async (newStatus: string) => {
+    if (selectedTickets.size === 0) return;
+
+    setBulkUpdating(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const ticketId of selectedTickets) {
+      try {
+        const response = await fetch(`/api/tickets/${ticketId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        });
+
+        if (response.ok) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      } catch {
+        errorCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      toast.success(`${successCount} talep güncellendi`);
+      fetchTickets();
+    }
+    if (errorCount > 0) {
+      toast.error(`${errorCount} talep güncellenemedi`);
+    }
+
+    clearSelection();
+    setBulkUpdating(false);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedTickets.size === 0) return;
+
+    const confirmed = window.confirm(
+      `${selectedTickets.size} talebi silmek istediğinize emin misiniz?`
+    );
+    if (!confirmed) return;
+
+    setBulkUpdating(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const ticketId of selectedTickets) {
+      try {
+        const response = await fetch(`/api/tickets/${ticketId}`, {
+          method: "DELETE",
+        });
+
+        if (response.ok) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      } catch {
+        errorCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      toast.success(`${successCount} talep silindi`);
+      fetchTickets();
+    }
+    if (errorCount > 0) {
+      toast.error(`${errorCount} talep silinemedi`);
+    }
+
+    clearSelection();
+    setBulkUpdating(false);
   };
 
   const formatTime = (dateStr: string) => {
@@ -460,6 +575,65 @@ export default function TicketsPage() {
         </div>
       </div>
 
+      {/* Bulk Action Toolbar */}
+      {selectedTickets.size > 0 && (
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="p-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Checkbox
+                checked={selectedTickets.size === filteredTickets.length}
+                onCheckedChange={toggleAllTickets}
+              />
+              <span className="text-sm font-medium">
+                {selectedTickets.size} talep seçildi
+              </span>
+              <Button variant="ghost" size="sm" onClick={clearSelection}>
+                Seçimi Temizle
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={bulkUpdating}>
+                    {bulkUpdating ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Durum Değiştir
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => handleBulkStatusUpdate("OPEN")}>
+                    <AlertCircle className="mr-2 h-4 w-4 text-red-500" />
+                    Açık
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusUpdate("WAITING_CUSTOMER")}>
+                    <Clock className="mr-2 h-4 w-4 text-yellow-500" />
+                    Müşteri Bekliyor
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusUpdate("RESOLVED")}>
+                    <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
+                    Çözüldü
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkStatusUpdate("CLOSED")}>
+                    <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
+                    Kapalı
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleBulkDelete}
+                disabled={bulkUpdating}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Sil ({selectedTickets.size})
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tickets List */}
       <Card>
         <CardContent className="p-0">
@@ -481,15 +655,27 @@ export default function TicketsPage() {
                 const StatusIcon = statusInfo.icon;
 
                 return (
-                  <Link
+                  <div
                     key={ticket.id}
-                    href={`/dashboard/tickets/${ticket.id}`}
                     className="flex items-center gap-4 p-4 hover:bg-accent transition-colors"
                   >
-                    {/* Status Icon */}
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-full ${ticket.hasUnreplied ? "bg-red-100 dark:bg-red-900" : "bg-muted"}`}>
-                      <StatusIcon className={`h-5 w-5 ${ticket.hasUnreplied ? "text-red-600" : "text-muted-foreground"}`} />
-                    </div>
+                    {/* Checkbox */}
+                    <Checkbox
+                      checked={selectedTickets.has(ticket.id)}
+                      onCheckedChange={() => toggleTicketSelection(ticket.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-shrink-0"
+                    />
+
+                    {/* Link wrapper for rest of content */}
+                    <Link
+                      href={`/dashboard/tickets/${ticket.id}`}
+                      className="flex items-center gap-4 flex-1 min-w-0"
+                    >
+                      {/* Status Icon */}
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-full flex-shrink-0 ${ticket.hasUnreplied ? "bg-red-100 dark:bg-red-900" : "bg-muted"}`}>
+                        <StatusIcon className={`h-5 w-5 ${ticket.hasUnreplied ? "text-red-600" : "text-muted-foreground"}`} />
+                      </div>
 
                     {/* Main Content */}
                     <div className="flex-1 min-w-0">
@@ -539,21 +725,22 @@ export default function TicketsPage() {
                       )}
                     </div>
 
-                    {/* Time */}
-                    <div className="text-sm text-muted-foreground w-24 text-right">
-                      {formatTime(ticket.lastActivityAt)}
-                    </div>
+                      {/* Time */}
+                      <div className="text-sm text-muted-foreground w-24 text-right">
+                        {formatTime(ticket.lastActivityAt)}
+                      </div>
+                    </Link>
 
-                    {/* Delete Button */}
+                    {/* Delete Button - outside Link */}
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                      className="h-8 w-8 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950 flex-shrink-0"
                       onClick={(e) => handleDeleteClick(e, ticket)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
-                  </Link>
+                  </div>
                 );
               })}
             </div>
