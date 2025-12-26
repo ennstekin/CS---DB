@@ -179,7 +179,7 @@ export default function MailsPage() {
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [orderDetailOpen, setOrderDetailOpen] = useState(false);
   const [selectedOrderNumber, setSelectedOrderNumber] = useState<string>("");
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
   const [aiSuggestedReply, setAiSuggestedReply] = useState<string>("");
   const [isGeneratingReply, setIsGeneratingReply] = useState(false);
@@ -296,16 +296,17 @@ export default function MailsPage() {
     setManualReplyText("");
   }, [selectedMail]);
 
+  // Auto-refresh IMAP - only when explicitly enabled, every 10 minutes
   useEffect(() => {
     if (!autoRefreshEnabled) return;
-    const interval = setInterval(() => fetchNewMailsFromImap(), 2 * 60 * 1000);
-    fetchNewMailsFromImap();
+    const interval = setInterval(() => fetchNewMailsFromImap(), 10 * 60 * 1000); // 10 dakika
     return () => clearInterval(interval);
   }, [autoRefreshEnabled]);
 
+  // Auto-refresh DB - only when auto-refresh enabled, every 2 minutes
   useEffect(() => {
     if (!autoRefreshEnabled) return;
-    const interval = setInterval(() => loadMails(), 30 * 1000);
+    const interval = setInterval(() => loadMails(), 2 * 60 * 1000); // 2 dakika
     return () => clearInterval(interval);
   }, [autoRefreshEnabled]);
 
