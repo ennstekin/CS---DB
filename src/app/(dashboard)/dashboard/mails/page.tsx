@@ -673,15 +673,31 @@ export default function MailsPage() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchNewMailsFromImap()}
+                  disabled={isFetchingNewMails}
+                >
+                  <Mail className={cn("h-4 w-4 mr-1", isFetchingNewMails && "animate-pulse")} />
+                  {isFetchingNewMails ? "Çekiliyor..." : "Mailleri Çek"}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Sunucudan yeni mailleri manuel olarak çek
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
                   variant={autoRefreshEnabled ? "default" : "outline"}
                   size="sm"
                   onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
                 >
-                  <RefreshCw className={cn("h-4 w-4", (autoRefreshEnabled || isFetchingNewMails) && "animate-spin")} />
+                  <RefreshCw className={cn("h-4 w-4", autoRefreshEnabled && "animate-spin")} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {autoRefreshEnabled ? "Otomatik yenileme açık" : "Otomatik yenileme kapalı"}
+                {autoRefreshEnabled ? "Otomatik yenileme açık (10 dk)" : "Otomatik yenileme kapalı"}
               </TooltipContent>
             </Tooltip>
             <Tooltip>
